@@ -164,10 +164,20 @@ def _clip(s: Any, limit: int, flags: list[str], field: str) -> str:
     return s
 
 
+# Near-miss values worth keeping rather than dropping to an abstention: a topic outcome has no
+# "partially resolved", but the customer did say the problem is not fully fixed.
+ENUM_ALIASES = {"partially_resolved": "unresolved", "partly_resolved": "unresolved",
+                "not_resolved": "unresolved", "resolved_partially": "unresolved"}
+
+
 def _coerce_enum(value: Any, allowed: list[str], fallback: str, flags: list[str], field: str) -> str:
     v = str(value or "").strip()
     if v in allowed:
         return v
+    alias = ENUM_ALIASES.get(v)
+    if alias in allowed:
+        flags.append(f"aliased_enum:{field}={v[:40]}")
+        return alias
     flags.append(f"invalid_enum:{field}={v[:40]}")
     return fallback
 

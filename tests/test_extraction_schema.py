@@ -97,3 +97,21 @@ def test_validate_response_error_row_on_broken_response():
 def test_redaction_share():
     assert redaction_share("XXXX XXXX said XX/XX/XXXX.") == 0.75
     assert redaction_share("no redaction at all") == 0.0
+
+
+def test_near_miss_enum_values_are_aliased_not_discarded():
+    """A topic outcome has no "partially resolved", but the customer did say it is not fully fixed:
+    keep the meaning rather than dropping to an abstention."""
+    from voc.llm.fake_client import fake_extraction
+    from voc.schemas.extraction import normalize_extraction
+
+    raw = fake_extraction("Chase charged me a $34.00 overdraft fee and nobody called back.")
+    raw["topics"][0]["outcome"] = "partially_resolved"
+    ext, flags = normalize_extraction(raw)
+    assert ext.topics[0].outcome == "unresolved"
+    assert any(f.startswith("aliased_enum:outcome") for f in flags)
+
+    raw["topics"][0]["outcome"] = "nonsense"
+    ext, flags = normalize_extraction(raw)
+    assert ext.topics[0].outcome == "unknown"
+    assert any(f.startswith("invalid_enum:outcome") for f in flags)
