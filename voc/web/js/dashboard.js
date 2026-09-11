@@ -48,8 +48,15 @@ export async function renderReasons() {
       ]));
     }
     if (payload.result_id) {
+      // Say what the link opens: a result covers the calls that carry a reason, which is fewer than
+      // the scope whenever some calls are not yet read.
+      const inResult = payload.n_call_ids ?? 0;
+      const inScope = payload.scope?.n_calls_in_scope ?? 0;
       out.appendChild(el("p", { class: "footnote" }, [
-        callsLink(payload.result_id, `${num(payload.scope?.n_calls_in_scope)} calls in scope`, "Calls in scope"),
+        callsLink(payload.result_id, `${num(inResult)} calls carry a contact reason`, "Calls with a contact reason"),
+        inScope > inResult
+          ? el("span", { class: "muted", text: ` of ${num(inScope)} in scope` })
+          : null,
       ]));
     }
   } catch (err) { failed(node, err); }
