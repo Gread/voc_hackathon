@@ -243,3 +243,21 @@ def test_the_emerging_summary_reports_the_recent_window(con):
     line = summarize("emerging_themes", payload, {"n_calls_in_scope": 4425})
     assert "6 recent" in line and "1.9 expected" in line
     assert "(0)" not in line
+
+
+def test_the_data_version_does_not_depend_on_line_endings(tmp_path):
+    """The data version keys every recorded answer. Hashing raw bytes made it depend on how git
+    checked the files out, so a clone on another machine found none of the recorded answers."""
+    from voc.store.db import file_sha
+
+    lf = tmp_path / "lf.jsonl"
+    crlf = tmp_path / "crlf.jsonl"
+    body = [b'{"call_id": "c1"}', b'{"call_id": "c2"}', b'{"call_id": "c3"}']
+    lf.write_bytes(b"\n".join(body) + b"\n")
+    crlf.write_bytes(b"\r\n".join(body) + b"\r\n")
+
+    assert file_sha(lf) == file_sha(crlf), "the same records must hash the same on either platform"
+
+    different = tmp_path / "other.jsonl"
+    different.write_bytes(b"\n".join(body[:2]) + b"\n")
+    assert file_sha(lf) != file_sha(different), "different content must still hash differently"

@@ -45,12 +45,25 @@ def create_schema(con: sqlite3.Connection) -> None:
 
 
 def file_sha(path: Path) -> str:
+    """Content hash, ignoring line endings.
+
+    This feeds the data version, which keys every recorded answer. Hashing raw bytes made the
+    version depend on how git checked the file out, so a clone on another machine computed a
+    different version and found none of the recorded answers."""
     if not path.exists():
         return ""
     h = hashlib.sha256()
+    held_cr = False
     with path.open("rb") as f:
         for chunk in iter(lambda: f.read(1 << 20), b""):
-            h.update(chunk)
+            if held_cr:
+                chunk = b"\r" + chunk
+            held_cr = chunk.endswith(b"\r")   # a CR on a chunk boundary may still start a CRLF
+            if held_cr:
+                chunk = chunk[:-1]
+            h.update(chunk.replace(b"\r\n", b"\n"))
+    if held_cr:
+        h.update(b"\r")
     return h.hexdigest()
 
 
