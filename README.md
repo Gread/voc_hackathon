@@ -35,9 +35,19 @@ Real, public consumer complaint narratives about one large US bank, pulled from 
 
 Every record is a real complaint written by a real person who consented to publication. Nothing in `data/`
 is synthetic; the only planted patterns live in `tests/fixtures`, where the analytics are checked against
-known answers. Two honest caveats the UI states out loud: dates are when the regulator received the
-complaint, which lags the contact by days to weeks; and the corpus is complaints, so satisfaction findings
-are *positive moments inside complaints*, not a measure of overall satisfaction.
+known answers. Three honest caveats, two of which the UI states out loud:
+
+- Dates are when the regulator received the complaint, which lags the contact by days to weeks.
+- The corpus is complaints, so satisfaction findings are *positive moments inside complaints*, not a
+  measure of overall satisfaction.
+- The briefing expects the stated reason ("I want to cancel") to differ often from the real driver ("I was
+  charged twice and nobody called back"). In this corpus it differs in only about 1 contact in 75. That
+  looks like a property of the medium rather than a gap in the reading: someone writing a formal complaint
+  to a regulator leads with their actual grievance, where someone phoning a contact centre opens with what
+  they want. The system extracts the distinction and it is worth keeping, because on real call transcripts
+  it should be far more common. Where it does occur the reading is good, for example a customer asking for
+  a hold to be released whose underlying account is a representative giving wrong advice and the bank then
+  blaming them for it.
 
 ## The five steps
 

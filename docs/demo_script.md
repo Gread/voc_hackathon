@@ -50,7 +50,17 @@ Scroll to the bottom of the drawer.
 
 Point at the stated reason versus underlying driver.
 
-> "This is the one the briefing asks for. What they said they wanted, and what actually drove the call."
+> "What they asked for, and what actually drove the contact. Worth being straight about this one: in
+> written complaints the two usually match, because someone writing to a regulator leads with the real
+> grievance. It splits in about one contact in seventy-five here. On phone calls, where people open with
+> what they want, we would expect it far more often, and the extraction already captures it."
+
+Pick one of the calls where they do differ before the demo so you can show a real example rather than
+hunting for one live. `voc tool search_calls` will not find them; this will:
+
+```bash
+python -c "import json;[print(r['call_id'],'|',json.loads(l)['extraction']['stated_reason'][:60]) for l in open('data/extractions.jsonl',encoding='utf-8') if (r:=json.loads(l)).get('status')=='ok' and r['extraction'].get('reason_differs')][:5]"
+```
 
 ## 2:30 – 3:30 Q5 · Are customers describing the same underlying problem in different ways?
 
