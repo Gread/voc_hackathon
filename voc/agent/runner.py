@@ -221,7 +221,7 @@ def run_agent(
     from voc.agent import tools as tools_mod
 
     settings = get_settings()
-    model = model or settings.ask_model
+    model = model or settings.live_ask_model
     effort = effort or settings.ask_effort
     run = AgentRun(question=question, filters=filters, as_of_week=as_of_week, data_version=data_version,
                    model=model, effort=effort)
@@ -234,17 +234,22 @@ def run_agent(
             on_event(ev)
 
     if turn is None:
-        import anthropic
+        system = render_system_prompt(caveats)
+        if settings.provider == "openrouter":
+            from voc.agent.openrouter_turn import OpenRouterTurn
+            turn = OpenRouterTurn(model, effort, system, tools_mod.TOOL_SPECS)
+        else:
+            import anthropic
 
-        client = client or anthropic.Anthropic(max_retries=2)
-        turn = LiveTurn(client, model, effort, render_system_prompt(caveats), tools_mod.TOOL_SPECS,
-                        settings.enable_fallbacks)
+            client = client or anthropic.Anthropic(max_retries=2)
+            turn = LiveTurn(client, model, effort, system, tools_mod.TOOL_SPECS, settings.enable_fallbacks)
 
     ctx = tools_mod.ToolContext(con=con, qhash=qhash, as_of_week=as_of_week)
     messages: list[dict[str, Any]] = [
         {"role": "user", "content": first_user_message(question, filters, as_of_week, data_version, n_in_scope)}
     ]
     emit("status", {"text": "reading the question"})
+    asked_to_submit = False
 
     try:
         for round_no in range(1, MAX_ROUNDS + 1):
@@ -263,6 +268,14 @@ def run_agent(
             texts = [b.text for b in content if getattr(b, "type", None) == "text"]
             if not tool_uses:
                 run.final_text = "\n".join(texts).strip()
+                # Answering in prose is the common near-miss: the work is done, the wrapper is missing.
+                # Ask once for the structured call before falling back to a templated answer.
+                if not asked_to_submit and round_no < MAX_ROUNDS:
+                    asked_to_submit = True
+                    _nudge(messages, model, "Do not answer in prose. Call the submit_answer tool now, alone in "
+                                            "this turn, with the findings you already have.")
+                    emit("status", {"text": "answer came back as prose; asking for the structured call"})
+                    continue
                 run.outcome = "text_only"
                 break
             submits = [b for b in tool_uses if b.name == "submit_answer"]

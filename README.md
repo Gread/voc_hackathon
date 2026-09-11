@@ -16,9 +16,14 @@ python -m voc serve
 
 Then open http://127.0.0.1:8000. The index rebuilds itself if the files under `data/` changed.
 
-Without an `ANTHROPIC_API_KEY` the demo still works: recorded answers replay through the same channel as
-live ones, and any unscripted question gets a templated answer from the same tools, clearly badged. With a
-key in `.env`, the Ask panel runs the agent live.
+Without an API key the demo still works: recorded answers replay through the same channel as live ones,
+and any unscripted question gets a templated answer from the same tools, clearly badged. With a key in
+`.env`, the Ask panel runs the agent live.
+
+The live agent is not tied to one provider. `VOC_LLM_PROVIDER=anthropic` uses `ANTHROPIC_API_KEY`;
+`VOC_LLM_PROVIDER=openrouter` uses `OPENROUTER_API_KEY` and any model OpenRouter serves, Gemini included.
+Only the transport changes: the tools, the loop, the budgets and the server-side verification are the same
+code either way, so a different model can pick different tools but cannot make a number wrong.
 
 ## The data
 

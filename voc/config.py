@@ -48,15 +48,24 @@ class Settings:
     target_calls: int
     company: str
     api_key_present: bool
+    provider: str            # anthropic | openrouter
+    or_ask_model: str
+    or_extract_model: str
+    or_theme_model: str
 
     @property
     def can_call_api(self) -> bool:
         return self.api_key_present and self.llm_mode != "fake"
 
+    @property
+    def live_ask_model(self) -> str:
+        return self.or_ask_model if self.provider == "openrouter" else self.ask_model
+
 
 @lru_cache(maxsize=1)
 def get_settings() -> Settings:
     load_dotenv()
+    provider = _env("VOC_LLM_PROVIDER", "anthropic").lower()
     data_dir = Path(_env("VOC_DATA_DIR", str(REPO_ROOT / "data")))
     if not data_dir.is_absolute():
         data_dir = REPO_ROOT / data_dir
@@ -77,7 +86,12 @@ def get_settings() -> Settings:
         months=int(_env("VOC_MONTHS", "24")),
         target_calls=int(_env("VOC_TARGET_CALLS", "4000")),
         company=_env("VOC_COMPANY", "JPMORGAN CHASE & CO."),
-        api_key_present=bool(os.environ.get("ANTHROPIC_API_KEY") or os.environ.get("ANTHROPIC_AUTH_TOKEN")),
+        api_key_present=bool(os.environ.get("ANTHROPIC_API_KEY") or os.environ.get("ANTHROPIC_AUTH_TOKEN")
+                             or (provider == "openrouter" and os.environ.get("OPENROUTER_API_KEY"))),
+        provider=provider,
+        or_ask_model=_env("VOC_OR_ASK_MODEL", "google/gemini-3.1-pro-preview"),
+        or_extract_model=_env("VOC_OR_EXTRACT_MODEL", "google/gemini-2.5-flash"),
+        or_theme_model=_env("VOC_OR_THEME_MODEL", "google/gemini-2.5-flash"),
     )
 
 
