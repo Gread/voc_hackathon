@@ -41,7 +41,7 @@ known answers. Three honest caveats, two of which the UI states out loud:
 - The corpus is complaints, so satisfaction findings are *positive moments inside complaints*, not a
   measure of overall satisfaction.
 - The briefing expects the stated reason ("I want to cancel") to differ often from the real driver ("I was
-  charged twice and nobody called back"). In this corpus it differs in only about 1 contact in 75. That
+  charged twice and nobody called back"). In this corpus it differs in 55 of the 4,425, about 1 contact in 80. That
   looks like a property of the medium rather than a gap in the reading: someone writing a formal complaint
   to a regulator leads with their actual grievance, where someone phoning a contact centre opens with what
   they want. The system extracts the distinction and it is worth keeping, because on real call transcripts
@@ -127,6 +127,10 @@ voc/agent/      step 4 and 5: tools, the manual loop, the verifier, the cache, t
 voc/api/        FastAPI endpoints and the event stream
 voc/web/        the dashboard: static ES modules, vendored Chart.js, no build step
 ```
+
+The presentation deck is [docs/voc_insights_deck.pptx](docs/voc_insights_deck.pptx). Every number on it is
+read from the index by `python docs/make_deck.py`, so it cannot drift from the data; re-run that after a
+`build-db` and the slides update themselves.
 
 See [docs/DESIGN.md](docs/DESIGN.md) for the full design, [docs/BUILD_LOG.md](docs/BUILD_LOG.md) for what
 was built and what the real data showed, [TEAM_GUIDE.md](TEAM_GUIDE.md) for how to extend it, and

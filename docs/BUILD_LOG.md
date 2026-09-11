@@ -86,7 +86,7 @@ built from those and labelled honestly as positive moments inside complaints.
 
 **One briefing expectation does not hold here, and that is worth saying out loud.** The briefing expects
 the stated reason ("I want to cancel") to differ often from the real driver. In this corpus it differs in
-about 1 contact in 75. The reading is not at fault: where it splits, it splits well. It looks like a
+55 of the 4,425, about 1 contact in 80. The reading is not at fault: where it splits, it splits well. It looks like a
 property of the medium, since someone writing a formal complaint leads with the grievance while someone
 phoning opens with what they want. On real call transcripts it should be far more common, and the
 capability is built and working. Do not oversell this moment on stage.

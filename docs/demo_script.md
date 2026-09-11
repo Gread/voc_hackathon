@@ -52,7 +52,7 @@ Point at the stated reason versus underlying driver.
 
 > "What they asked for, and what actually drove the contact. Worth being straight about this one: in
 > written complaints the two usually match, because someone writing to a regulator leads with the real
-> grievance. It splits in about one contact in seventy-five here. On phone calls, where people open with
+> grievance. It splits in 55 of the 4,425 here, about one contact in eighty. On phone calls, where people open with
 > what they want, we would expect it far more often, and the extraction already captures it."
 
 Pick one of the calls where they do differ before the demo so you can show a real example rather than
