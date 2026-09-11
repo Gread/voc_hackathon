@@ -173,6 +173,16 @@ index, so a fresh clone could replay an answer and then fail to open any of the 
 rebuild now re-registers them from the answer's own trace, which keeps the query rather than the id list,
 so the calls are re-executed on demand.
 
+**A fresh clone answered every demo question with a templated fallback.** The data version is a hash of
+the input files and keys every recorded answer. It hashed raw bytes, so git's line-ending conversion
+changed it on checkout: a clone on another machine computed a different version, matched none of the eight
+recordings, and quietly fell back. Nothing about the data had changed. The hash now ignores line endings,
+and a fresh clone was checked end to end: build, serve, ask, and all eight resolve.
+
+**The emerging summary reported every flagged theme as "(0)".** Those rows count the recent four weeks, not
+the whole scope, so the shared summary helper read the wrong field. That one line is what the agent reads
+to decide what to pull next, and it shows in the trace on stage.
+
 ## What was verified, and how
 
 Not "it compiles" but "it does the thing":
