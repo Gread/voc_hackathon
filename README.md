@@ -123,8 +123,9 @@ voc/api/        FastAPI endpoints and the event stream
 voc/web/        the dashboard: static ES modules, vendored Chart.js, no build step
 ```
 
-See [docs/DESIGN.md](docs/DESIGN.md) for the full design and [TEAM_GUIDE.md](TEAM_GUIDE.md) for how to
-extend it.
+See [docs/DESIGN.md](docs/DESIGN.md) for the full design, [docs/BUILD_LOG.md](docs/BUILD_LOG.md) for what
+was built and what the real data showed, [TEAM_GUIDE.md](TEAM_GUIDE.md) for how to extend it, and
+[docs/demo_script.md](docs/demo_script.md) for the seven-minute walkthrough.
 
 ## Extraction quality
 
