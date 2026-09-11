@@ -86,3 +86,9 @@ export function badge(confidence) {
 export function statusPill(status) {
   return el("span", { class: `pill ${esc(status || "stable")}`, text: status || "stable" });
 }
+
+/** "1 product", "3 products" - the theme card headline is the demo's most-read line. */
+export function plural(n, singular, pluralForm = null) {
+  const count = Number(n) || 0;
+  return `${num(count)} ${count === 1 ? singular : (pluralForm ?? singular + "s")}`;
+}

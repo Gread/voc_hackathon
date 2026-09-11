@@ -2,7 +2,7 @@
 
 import { api } from "./api.js";
 import { openCall, openCallList } from "./calldrawer.js";
-import { clear, el, label, num, pct, shortDate, statusPill } from "./format.js";
+import { clear, el, label, num, pct, plural, shortDate, statusPill } from "./format.js";
 import { queryParams } from "./state.js";
 import { trendChart } from "./charts.js";
 
@@ -86,9 +86,9 @@ export async function openTheme(themeId) {
   if (d.root_cause) out.appendChild(el("p", { class: "muted", text: `Root cause as customers describe it: ${d.root_cause}` }));
 
   const head = el("p", { class: "row-meta" }, [
-    el("strong", { text: `${num(d.n_calls)} calls` }), document.createTextNode(" · "),
-    el("strong", { text: `${num(d.n_wordings)} wordings` }), document.createTextNode(" · "),
-    el("strong", { text: `${num(d.n_products)} products` }),
+    el("strong", { text: plural(d.n_calls, "call") }), document.createTextNode(" · "),
+    el("strong", { text: plural(d.n_wordings, "wording") }), document.createTextNode(" · "),
+    el("strong", { text: plural(d.n_products, "product") }),
     d.status ? document.createTextNode(" · ") : null, d.status ? statusPill(d.status) : null,
   ]);
   out.appendChild(head);
@@ -109,7 +109,7 @@ export async function openTheme(themeId) {
       { valueKey: "n_calls" }), 0);
   }
 
-  out.appendChild(el("h3", { text: `The same problem in ${num(d.n_wordings)} different wordings` }));
+  out.appendChild(el("h3", { text: `The same problem in ${plural(d.n_wordings, "different wording")}` }));
   const wordings = d.wordings || [];
   if (!wordings.length) out.appendChild(el("p", { class: "muted", text: "no member statements" }));
   for (const w of wordings) {
