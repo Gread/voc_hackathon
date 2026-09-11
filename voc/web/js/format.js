@@ -1,0 +1,81 @@
+// Formatting and safe DOM helpers. Nothing from the API is ever inserted as raw HTML.
+
+export function esc(value) {
+  return String(value ?? "").replace(/[&<>"']/g, (c) =>
+    ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+}
+
+export function el(tag, attrs = {}, children = []) {
+  const node = document.createElement(tag);
+  for (const [key, value] of Object.entries(attrs)) {
+    if (value === null || value === undefined || value === false) continue;
+    if (key === "class") node.className = value;
+    else if (key === "text") node.textContent = String(value);
+    else if (key === "html") node.innerHTML = value;            // only for strings we built ourselves
+    else if (key.startsWith("on") && typeof value === "function") node.addEventListener(key.slice(2), value);
+    else if (key === "dataset") Object.assign(node.dataset, value);
+    else node.setAttribute(key, String(value));
+  }
+  for (const child of [].concat(children)) {
+    if (child === null || child === undefined || child === false) continue;
+    node.appendChild(typeof child === "string" ? document.createTextNode(child) : child);
+  }
+  return node;
+}
+
+export function clear(node) {
+  while (node.firstChild) node.removeChild(node.firstChild);
+  return node;
+}
+
+export const num = (v) => (v === null || v === undefined || Number.isNaN(Number(v))
+  ? "-" : Number(v).toLocaleString("en-US"));
+
+export function pct(v, digits = 1) {
+  if (v === null || v === undefined || Number.isNaN(Number(v))) return "-";
+  const n = Number(v);
+  return `${(n <= 1 && n >= -1 ? n * 100 : n).toFixed(digits)}%`;
+}
+
+export const signed = (v, digits = 1) =>
+  v === null || v === undefined ? "" : `${Number(v) > 0 ? "+" : ""}${Number(v).toFixed(digits)}`;
+
+export function label(code) {
+  return String(code ?? "").replace(/_/g, " ").replace(/^\w/, (c) => c.toUpperCase());
+}
+
+export const shortDate = (iso) => (iso ? String(iso).slice(0, 10) : "");
+
+// Minimal, safe markdown: paragraphs, **bold**, *italic*, `code`, - lists, and [c1] claim markers.
+export function markdown(text) {
+  const inline = (s) => esc(s)
+    .replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>")
+    .replace(/(^|[^*])\*([^*\n]+)\*/g, "$1<em>$2</em>")
+    .replace(/`([^`]+)`/g, "<code>$1</code>")
+    .replace(/\[(c\d+)\]/g, '<span class="marker">[$1]</span>');
+  const out = [];
+  let list = null;
+  for (const raw of String(text ?? "").split("\n")) {
+    const line = raw.trim();
+    if (!line) { if (list) { out.push(`<ul>${list.join("")}</ul>`); list = null; } continue; }
+    if (/^[-*]\s+/.test(line)) { (list ??= []).push(`<li>${inline(line.replace(/^[-*]\s+/, ""))}</li>`); continue; }
+    if (list) { out.push(`<ul>${list.join("")}</ul>`); list = null; }
+    out.push(`<p>${inline(line)}</p>`);
+  }
+  if (list) out.push(`<ul>${list.join("")}</ul>`);
+  return out.join("");
+}
+
+export function bar(fraction, tone = "") {
+  const width = Math.max(0, Math.min(100, Number(fraction) * 100 || 0));
+  return el("div", { class: `bar ${tone}` }, [el("span", { style: `width:${width.toFixed(1)}%` })]);
+}
+
+export function badge(confidence) {
+  if (!confidence) return el("span", { class: "badge", text: "no support" });
+  return el("span", { class: `badge ${esc(confidence.tier || "")}`, text: confidence.badge || confidence.tier || "" });
+}
+
+export function statusPill(status) {
+  return el("span", { class: `pill ${esc(status || "stable")}`, text: status || "stable" });
+}

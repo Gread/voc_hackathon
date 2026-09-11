@@ -1,0 +1,165 @@
+// Composition root: load meta, wire the filters, the as-of slider and the panels.
+
+import { api } from "./js/api.js";
+import { initAsk } from "./js/ask.js";
+import { initDrawer } from "./js/calldrawer.js";
+import { initDashboard, renderAll, renderAsOfOnly } from "./js/dashboard.js";
+import { clear, el, esc, label, num, pct } from "./js/format.js";
+import { clearFilters, onChange, queryParams, readURL, setAsOf, setFilter, state } from "./js/state.js";
+import { initThemeCard } from "./js/themecard.js";
+
+let meta = null;
+
+function fillSelect(id, key, values, labels = label) {
+  const select = document.getElementById(id);
+  clear(select);
+  for (const value of values) {
+    const option = el("option", { value, text: labels(value) });
+    if ((state.filters[key] || []).includes(value)) option.selected = true;
+    select.appendChild(option);
+  }
+  select.size = Math.min(4, Math.max(2, values.length));
+  select.addEventListener("change", () => {
+    setFilter(key, [...select.selectedOptions].map((o) => o.value));
+  });
+}
+
+async function loadFilterOptions() {
+  // Options come from the data itself: the breakdown endpoint lists every value with support.
+  const dims = [["fProduct", "product"], ["fSegment", "segment"], ["fRegionGroup", "region_group"]];
+  for (const [id, dim] of dims) {
+    try {
+      const payload = await api.breakdown({}, { entity_type: "all", by: dim, min_n: 1 });
+      const values = (payload.rows || []).map((r) => r.value).filter(Boolean);
+      if (values.length) fillSelect(id, dim, values);
+    } catch { /* leave the select empty if the dimension is unavailable */ }
+  }
+}
+
+function setupAsOf(weeks) {
+  const slider = document.getElementById("asOf");
+  const output = document.getElementById("asOfLabel");
+  if (!weeks.length) { slider.disabled = true; output.textContent = "-"; return; }
+  slider.min = "0";
+  slider.max = String(weeks.length - 1);
+  const initial = state.asOf && weeks.includes(state.asOf) ? weeks.indexOf(state.asOf) : weeks.length - 1;
+  slider.value = String(initial);
+  output.textContent = weeks[initial];
+  slider.addEventListener("input", () => {
+    output.textContent = weeks[Number(slider.value)];
+  });
+  slider.addEventListener("change", () => {
+    setAsOf(weeks[Number(slider.value)]);
+    renderAsOfOnly();
+  });
+
+  let playing = false;
+  document.getElementById("replay").addEventListener("click", async () => {
+    if (playing) { playing = false; return; }
+    playing = true;
+    const start = Math.max(0, weeks.length - 16);
+    for (let i = start; i < weeks.length && playing; i++) {
+      slider.value = String(i);
+      output.textContent = weeks[i];
+      setAsOf(weeks[i]);
+      renderAsOfOnly();
+      await new Promise((r) => setTimeout(r, 600));
+    }
+    playing = false;
+  });
+}
+
+function modeBadge() {
+  const node = document.getElementById("modeBadge");
+  const mode = meta.llm_mode === "fake" ? "FAKE DATA"
+    : meta.live_model ? `live · ${meta.live_model}`
+    : `recorded runs · data ${String(meta.data_version || "").slice(0, 8)}`;
+  node.textContent = mode;
+  node.classList.toggle("fake", meta.llm_mode === "fake");
+  node.title = meta.llm_mode === "fake"
+    ? "Extractions came from the heuristic fake client, not a model"
+    : "Recorded answers replay real tool runs; with an API key the agent answers live";
+}
+
+function pipelineStrip() {
+  const counts = meta.counts || {};
+  const qa = meta.qa || {};
+  const bits = [
+    `${num(counts.n_calls)} calls`, `${num(counts.n_topics)} topics`, `${num(counts.n_themes)} themes`,
+  ];
+  if (qa.reason_agreement) bits.push(`reason agreement ${Number(qa.reason_agreement).toFixed(2)}`);
+  if (qa.quote_verify_rate) bits.push(`quotes verified ${pct(qa.quote_verify_rate)}`);
+  document.getElementById("pipelineStrip").textContent = bits.join(" · ");
+}
+
+function aboutModal() {
+  const node = document.getElementById("modal");
+  const body = clear(document.getElementById("modalBody"));
+  const p = meta.provenance || {};
+  const qa = meta.qa || {};
+  node.hidden = false;
+  body.appendChild(el("h2", { text: "About this data" }));
+  body.appendChild(el("p", { text: p.note || "" }));
+  const rows = [
+    ["Source", p.source], ["Company", p.company],
+    ["Window", p.window?.start ? `${p.window.start} to ${p.window.end}` : ""],
+    ["Sampled", p.sampling_fraction ? `${pct(p.sampling_fraction)} of eligible complaints per month (seed ${p.seed ?? "?"})` : ""],
+    ["Eligible population", p.n_eligible ? `${num(p.n_eligible)} of ${num(p.n_raw)} pulled` : ""],
+    ["Calls in the index", num((meta.counts || {}).n_calls)],
+    ["Topics extracted", num((meta.counts || {}).n_topics)],
+    ["Themes", num((meta.counts || {}).n_themes)],
+    ["As-of week", meta.as_of_week], ["Data version", meta.data_version],
+    ["Extraction mode", meta.llm_mode],
+  ];
+  body.appendChild(el("table", { class: "kv" }, rows.filter(([, v]) => v !== undefined && v !== "" && v !== null)
+    .map(([k, v]) => el("tr", {}, [el("td", { text: k }), el("td", { text: String(v) })]))));
+  if (Object.keys(qa).length) {
+    body.appendChild(el("h3", { text: "Extraction quality" }));
+    body.appendChild(el("table", { class: "kv" }, Object.entries(qa)
+      .map(([k, v]) => el("tr", {}, [el("td", { text: label(k) }),
+                                     el("td", { text: typeof v === "object" ? JSON.stringify(v) : String(v) })]))));
+  }
+  body.appendChild(el("p", { class: "footnote", text:
+    "Dates are when the regulator received the complaint, which lags the underlying contact. " +
+    "Redactions such as XXXX are the regulator's and are kept verbatim in every quote. " +
+    "No synthetic or planted records are used anywhere in this dataset." }));
+}
+
+async function boot() {
+  readURL();
+  initDrawer();
+  initThemeCard();
+  initDashboard();
+  document.getElementById("clearFilters").addEventListener("click", () => {
+    clearFilters();
+    for (const id of ["fProduct", "fSegment", "fRegionGroup"]) {
+      for (const o of document.getElementById(id).options) o.selected = false;
+    }
+    document.getElementById("fFrom").value = "";
+    document.getElementById("fTo").value = "";
+  });
+  for (const [id, key] of [["fFrom", "date_from"], ["fTo", "date_to"]]) {
+    const input = document.getElementById(id);
+    input.value = state.filters[key] || "";
+    input.addEventListener("change", () => setFilter(key, input.value));
+  }
+  document.getElementById("aboutBtn").addEventListener("click", aboutModal);
+
+  try {
+    meta = await api.meta();
+  } catch (err) {
+    document.getElementById("pipelineStrip").textContent = `API unavailable: ${err.message}`;
+    document.getElementById("modeBadge").textContent = "offline";
+    return;
+  }
+  modeBadge();
+  pipelineStrip();
+  if (!state.asOf && meta.as_of_week) state.asOf = meta.as_of_week;
+  setupAsOf(meta.as_of_weeks || []);
+  initAsk(meta.questions || []);
+  await loadFilterOptions();
+  renderAll();
+  onChange((reason) => { if (reason !== "asof") renderAll(); });
+}
+
+boot();
