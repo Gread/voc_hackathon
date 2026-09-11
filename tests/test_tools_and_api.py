@@ -192,3 +192,27 @@ def test_satisfaction_rests_on_positive_moments_and_can_be_recounted(con):
     assert env["n_call_ids"] > 0, "a satisfaction claim cannot be verified without call ids"
     quoted = [q for m in moments for q in m.get("quotes", [])]
     assert quoted and all(q["quote"] for q in quoted)
+
+
+def test_get_call_payload_matches_what_the_call_drawer_reads(con):
+    """The drawer highlights evidence by offset and contrasts the form's own label, so this shape is
+    a contract: metadata nested, topics carrying evidence with offsets, and the raw labels present."""
+    ctx = ToolContext(con=con, qhash="test", as_of_week=None)
+    call_id = con.execute("SELECT call_id FROM evidence WHERE verified = 1 LIMIT 1").fetchone()["call_id"]
+    data = run_tool("get_call", {"call_id": call_id}, con, ctx)["data"]
+
+    assert data["text"]
+    meta = data["metadata"]
+    for field in ("date", "week", "month", "product", "product_raw", "issue_raw", "region",
+                  "region_group", "channel", "segment", "company", "shape"):
+        assert field in meta, f"the drawer reads metadata.{field}"
+
+    topics = data["topics"]
+    assert topics, "a call with verified evidence must expose its topics"
+    spans = [e for t in topics for e in t.get("evidence", [])]
+    assert spans, "topics must carry their evidence"
+    for e in spans:
+        if not e.get("verified"):
+            continue
+        assert data["text"][e["char_start"]:e["char_end"]] == e["quote"], \
+            "offsets must point at the quote or the highlight lands on the wrong words"

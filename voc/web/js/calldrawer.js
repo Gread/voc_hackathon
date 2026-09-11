@@ -71,19 +71,21 @@ export async function openCall(callId, focusQuote = null) {
     return;
   }
   const d = payload.data || {};
+  const meta = d.metadata || {};
   const extraction = d.extraction || {};
-  const spans = (d.evidence || extraction.evidence || []).slice();
-  if (!spans.length) {
-    for (const t of extraction.topics || []) for (const e of t.evidence || []) if (e.verified) spans.push(e);
-  }
-  for (const pm of extraction.positive_moments || []) if (pm.verified) spans.push(pm);
+  const topics = d.topics || extraction.topics || [];
+  const moments = d.positive_moments || extraction.positive_moments || [];
+  const spans = [];
+  for (const t of topics) for (const e of t.evidence || []) if (e.verified !== 0) spans.push(e);
+  for (const pm of moments) if (pm.verified !== 0) spans.push(pm);
 
   const out = clear(body());
   out.appendChild(el("h2", { text: `${d.call_id || callId}` }));
-  out.appendChild(el("p", { class: "muted", text: `${shortDate(d.date)} · ${label(d.product)} · ${d.region || "?"} · ${label(d.segment || "none")}` }));
+  out.appendChild(el("p", { class: "muted", text:
+    `${shortDate(meta.date)} · ${label(meta.product)} · ${meta.region || "?"} · ${label(meta.segment || "none")}` }));
 
   const textNode = el("div", { class: "calltext" });
-  if (d.shape === "transcript") textNode.appendChild(transcriptBubbles(d.text || ""));
+  if (meta.shape === "transcript") textNode.appendChild(transcriptBubbles(d.text || ""));
   else textNode.appendChild(highlight(d.text || "", spans));
   out.appendChild(textNode);
 
@@ -106,11 +108,11 @@ export async function openCall(callId, focusQuote = null) {
     ["Overall sentiment", extraction.overall_sentiment],
   ]));
 
-  for (const topic of extraction.topics || []) out.appendChild(topicBlock(topic));
+  for (const topic of topics) out.appendChild(topicBlock(topic));
 
-  if ((extraction.positive_moments || []).length) {
+  if (moments.length) {
     out.appendChild(el("h3", { text: "Positive moments" }));
-    for (const pm of extraction.positive_moments) {
+    for (const pm of moments) {
       out.appendChild(el("div", { class: "row" }, [
         el("span", { class: "chip", text: label(pm.category) }),
         el("p", { class: "quote", text: `"${pm.quote}"` }),
@@ -126,15 +128,17 @@ export async function openCall(callId, focusQuote = null) {
 
   out.appendChild(el("h3", { text: "Metadata" }));
   out.appendChild(kv([
-    ["Date received", shortDate(d.date)],
-    ["Week", d.week], ["Month", d.month],
-    ["Channel", label(d.channel)], ["Region", `${d.region || "?"} (${label(d.region_group)})`],
-    ["Segment", label(d.segment)], ["Company", d.company],
-    ["Sampling fraction", d.sampling_fraction],
+    ["Date received", shortDate(meta.date)],
+    ["Week", meta.week], ["Month", meta.month],
+    ["Channel", label(meta.channel)], ["Region", `${meta.region || "?"} (${label(meta.region_group)})`],
+    ["Segment", label(meta.segment)], ["Company", meta.company],
+    ["Sampling fraction", meta.sampling_fraction],
   ]));
-  out.appendChild(el("p", { class: "footnote", text:
-    `For contrast, the category this customer picked on the complaint form: ${d.product_raw || "?"} / ${d.issue_raw || "?"}` +
-    (d.sub_issue_raw ? ` / ${d.sub_issue_raw}` : "") + ". That label never reaches the extraction prompt." }));
+  if (meta.product_raw || meta.issue_raw) {
+    out.appendChild(el("p", { class: "footnote", text:
+      `For contrast, the category this customer picked on the complaint form: ${meta.product_raw || "?"} / ${meta.issue_raw || "?"}` +
+      (meta.sub_issue_raw ? ` / ${meta.sub_issue_raw}` : "") + ". That label never reaches the extraction prompt." }));
+  }
 }
 
 export function initDrawer() {
