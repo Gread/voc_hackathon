@@ -81,17 +81,28 @@ def caveats_text(con: sqlite3.Connection) -> str:
     return "\n".join(lines)
 
 
+def _meta_float(con: sqlite3.Connection, key: str) -> float | None:
+    """Meta values are JSON, so a missing metric reads back as the literal 'null'."""
+    raw = get_meta(con, key)
+    if raw in (None, "", "null", "None"):
+        return None
+    try:
+        return float(raw)
+    except (TypeError, ValueError):
+        return None
+
+
 def footnote_text(con: sqlite3.Connection) -> str:
     parts = []
-    agreement = get_meta(con, "qa_reason_agreement")
-    quotes = get_meta(con, "qa_quote_verify_rate")
-    golden = get_meta(con, "qa_golden_primary_accuracy")
-    if golden:
-        parts.append(f"extraction spot-check: primary reason accuracy {float(golden):.2f}")
-    if agreement:
-        parts.append(f"agreement with the customers' own complaint category {float(agreement):.2f}")
-    if quotes:
-        parts.append(f"quotes verified {float(quotes):.1%}")
+    golden = _meta_float(con, "qa_golden_primary_accuracy")
+    agreement = _meta_float(con, "qa_reason_agreement")
+    quotes = _meta_float(con, "qa_quote_verify_rate")
+    if golden is not None:
+        parts.append(f"extraction spot-check: primary reason accuracy {golden:.2f}")
+    if agreement is not None:
+        parts.append(f"agreement with the customers' own complaint category {agreement:.2f}")
+    if quotes is not None:
+        parts.append(f"quotes verified {quotes:.1%}")
     return "; ".join(parts)
 
 
@@ -239,6 +250,10 @@ async def stream_answer(question: str, filters: Filters | dict[str, Any] | None,
 
     yield encode_event("status", {"text": "no model available; producing a templated answer from the tools"})
     answer, results, events = _templated(question, filters, ctx, None, "no API key on this machine")
+    for ev in events:                      # show the same trace a live run would show
+        name = str(ev.get("name", "status"))
+        if name not in ("answer", "done", "error"):
+            yield encode_event(name, dict(ev.get("payload") or {}))
     verified = _finish(question, filters, ctx, answer, results, events, mode="templated", model="none", effort="",
                        usage=None, persist=False)
     yield encode_event("answer", {"answer": verified.model_dump()})

@@ -29,15 +29,18 @@ export async function renderReasons() {
     const out = clear(node);
     if (!rows.length) { out.appendChild(el("p", { class: "muted", text: "no reasons above minimum support in this scope" })); return; }
     for (const row of rows) {
-      const delta = row.delta_share_pts;
-      const dir = row.direction || (delta > 0 ? "rising" : delta < 0 ? "falling" : "flat");
+      // A delta needs a comparable previous period; without one only the trend direction is meaningful.
+      const comparable = Number(row.n_previous) > 0;
+      const delta = comparable ? row.delta_share_pts : null;
+      const dir = row.direction || "flat";
       const specifics = (row.top_specific_reasons || []).map((s) => `${s.text} (${s.n})`).join(" · ");
       out.appendChild(el("div", { class: "row", title: specifics }, [
         el("div", { class: "row-head" }, [
           el("span", { class: "row-name", text: label(row.label || row.reason) }),
           el("span", { class: "row-meta" }, [
             document.createTextNode(`${num(row.n_calls)} · ${pct(row.share ?? row.share_pct)}`),
-            delta ? el("span", { class: `delta ${delta > 0 ? "up" : "down"}`, text: ` ${signed(delta)} pts ${dir}` }) : null,
+            delta ? el("span", { class: `delta ${delta > 0 ? "up" : "down"}`, text: ` ${signed(delta)} pts` }) : null,
+            dir && dir !== "flat" ? el("span", { class: `delta ${dir === "rising" ? "up" : "down"}`, text: ` ${dir}` }) : null,
           ]),
         ]),
         bar((row.n_calls || 0) / max),
@@ -67,16 +70,17 @@ export async function renderDrivers() {
     const max = Math.max(1, ...rows.map((r) => r.n_calls || 0));
     for (const row of rows) {
       const quote = (row.quotes || [])[0];
-      const isTheme = Boolean(row.theme_id || (row.key || "").startsWith("thm_"));
-      const name = el(isTheme ? "button" : "span", isTheme
-        ? { class: "linkish", text: row.name || row.key, onclick: () => openTheme(row.theme_id || row.key) }
+      const themeId = row.theme_id || (String(row.key || "").startsWith("thm_") ? row.key : null);
+      const name = el(themeId ? "button" : "span", themeId
+        ? { class: "linkish", text: row.name || themeId, onclick: () => openTheme(themeId) }
         : { class: "row-name", text: label(row.name || row.key) });
       out.appendChild(el("div", { class: "row" }, [
         el("div", { class: "row-head" }, [name,
           el("span", { class: "row-meta", text: `${num(row.n_calls)} calls · mean ${Number(row.mean_sentiment ?? 0).toFixed(1)}` })]),
         bar((row.n_calls || 0) / max, driverPolarity === "positive" ? "pos" : "neg"),
         el("div", {}, (row.top_driver_categories || []).slice(0, 2).map((c) =>
-          el("span", { class: "chip", text: label(c.key || c) }))),
+          el("span", { class: "chip",
+                       text: `${label(typeof c === "string" ? c : c.driver_category || c.key)}${c.n_calls ? ` ${c.n_calls}` : ""}` }))),
         (row.top_specific_drivers || []).length
           ? el("p", { class: "quote", text: row.top_specific_drivers[0].text }) : null,
         quote ? el("p", { class: "quote" }, [
@@ -114,8 +118,9 @@ export async function renderEmerging() {
       ]));
     }
     if (data.expected_false_positives !== undefined && data.expected_false_positives !== null) {
+      const fp = Number(data.expected_false_positives);
       out.appendChild(el("p", { class: "footnote", text:
-        `About ${Number(data.expected_false_positives).toFixed(1)} of ${num(data.n_tested)} themes tested could pass this threshold by chance.` }));
+        `${fp < 0.1 ? "Fewer than 0.1" : `About ${fp.toFixed(1)}`} of ${num(data.n_tested)} themes tested could pass this threshold by chance.` }));
     }
   } catch (err) { failed(node, err); }
 }
@@ -133,8 +138,8 @@ export async function renderTrend(entityIds = null) {
     const payload = await api.trend(ids, "month", queryParams());
     const series = (payload.rows || []).map((r) => ({
       label: r.name || r.entity_id,
-      points: (r.points || r.series || []).map((p) => ({ period: p.period, share: p.share, n_calls: p.n_calls })),
-    }));
+      points: (r.series || r.points || []).map((p) => ({ period: p.period, share: p.share, n_calls: p.n_calls })),
+    })).filter((s) => s.points.length);
     subtitle.textContent = `monthly share · ${series.length} themes`;
     trendChart("trendChart", series, { valueKey: "share" });
   } catch (err) { subtitle.textContent = `trend unavailable: ${err.message}`; }

@@ -27,7 +27,7 @@ function renderChart(chart, results) {
     if (chart.kind === "trend") {
       const series = rows.map((r) => ({
         label: r.name || r.entity_id || chart.series_key,
-        points: (r.points || r.series || []).map((p) => ({ period: p.period, share: p.share, n_calls: p.n_calls })),
+        points: (r.series || r.points || []).map((p) => ({ period: p.period, share: p.share, n_calls: p.n_calls })),
       })).filter((s) => s.points.length);
       if (series.length) trendChart(id, series, { valueKey: "share" });
     } else {

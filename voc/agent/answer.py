@@ -11,6 +11,7 @@ from typing import Any, Iterable
 from voc.schemas.answer import Answer, Chart, Confidence, Quote, VerifiedAnswer, VerifiedClaim
 
 SHARE_TOLERANCE = 0.5
+MAX_CALL_IDS_SHOWN = 50   # mirrors voc.agent.tools.MAX_CALL_IDS_SHOWN
 
 
 # --- helpers ------------------------------------------------------------------------------
@@ -212,7 +213,9 @@ def verify_answer(
         for rid in known:
             union.extend(full_call_ids(con, rid, results.get(rid)))
         ids = list(dict.fromkeys(union))
-        if c.call_ids:
+        # A tool result shows at most MAX_CALL_IDS_SHOWN ids, so a claim quoting that many means
+        # "this whole result"; only a shorter list is a deliberate subset worth narrowing to.
+        if c.call_ids and len(c.call_ids) < MAX_CALL_IDS_SHOWN:
             given = set(c.call_ids)
             narrowed = [i for i in ids if i in given]
             ids = narrowed if narrowed else ids

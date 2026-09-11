@@ -30,6 +30,13 @@ def classify(question: str) -> str:
     return "volume"
 
 
+def _round(x: Any, digits: int = 1) -> str:
+    try:
+        return f"{float(x):.{digits}f}"
+    except (TypeError, ValueError):
+        return "?"
+
+
 def _pct(x: Any) -> str:
     try:
         return f"{float(x):.1f}%"
@@ -66,6 +73,16 @@ def _quotes_for(ctx: ToolContext, con: sqlite3.Connection, entity_type: str, ent
     return [Quote(evidence_id=r["evidence_id"], call_id=r["call_id"], quote=r["quote"], why="") for r in env.get("rows", [])[:n]]
 
 
+def _theme_scope(ctx: ToolContext, con: sqlite3.Connection, theme_id: Any, filters: Filters,
+                 as_of_week: str | None, results: dict[str, dict[str, Any]],
+                 events: list[dict[str, Any]]) -> dict[str, Any] | None:
+    """A result whose call ids are exactly one theme's calls, so a claim about it recounts correctly."""
+    if not theme_id or not str(theme_id).startswith("thm_"):
+        return None
+    return _call(ctx, con, "theme_detail", {"theme_id": str(theme_id), "filters": filters.model_dump(),
+                                            "as_of_week": as_of_week}, results, events)
+
+
 def answer_offline(question: str, filters: Filters, con: sqlite3.Connection, *, as_of_week: str | None = None,
                    results: dict[str, dict[str, Any]] | None = None) -> tuple[Answer, dict[str, dict[str, Any]], list[dict[str, Any]]]:
     """Build a templated answer from real tool results. Returns (answer, results, trace events)."""
@@ -84,7 +101,7 @@ def answer_offline(question: str, filters: Filters, con: sqlite3.Connection, *, 
                   n_calls: int, theme_ids: list[str] | None = None, numbers: list[KeyNumber] | None = None) -> str:
         cid = f"c{len(claims) + 1}"
         claims.append(Claim(id=cid, statement=statement, headline=headline, result_ids=[env["result_id"]],
-                            call_ids=list(env.get("call_ids") or [])[:50], n_calls=n_calls,
+                            call_ids=[], n_calls=n_calls,
                             theme_ids=theme_ids or [], key_numbers=numbers or []))
         return cid
 
@@ -117,8 +134,10 @@ def answer_offline(question: str, filters: Filters, con: sqlite3.Connection, *, 
         rows = (env or {}).get("rows", [])
         if rows:
             top = rows[0]
+            # Cite the theme's own result so the recount covers that theme, not every row of the ranking.
+            scoped = _theme_scope(ctx, con, top.get("key"), filters, as_of_week, results, events) or env
             cid = add_claim(f"The largest source of negative sentiment is {top.get('name')} "
-                            f"({top.get('n_calls')} calls).", env, rows, True, int(top.get("n_calls", 0)),
+                            f"({top.get('n_calls')} calls).", scoped, rows, True, int(top.get("n_calls", 0)),
                             theme_ids=[str(top.get("key"))] if top.get("key") else [])
             triggers = ", ".join(t.get("text", "")[:80] for t in (top.get("top_specific_drivers") or [])[:2])
             lines.append(f"The largest driver of negative sentiment is **{top.get('name')}** "
@@ -154,17 +173,20 @@ def answer_offline(question: str, filters: Filters, con: sqlite3.Connection, *, 
         data = (env or {}).get("data", {})
         if rows:
             top = rows[0]
+            scoped = _theme_scope(ctx, con, top.get("theme_id"), filters, as_of_week, results, events) or env
             cid = add_claim(f"{top.get('name')} is {top.get('status')}: {top.get('n_recent')} calls in the last four "
-                            f"weeks against {top.get('expected_recent')} expected.", env, rows, True,
-                            int(top.get("n_recent", 0)), theme_ids=[str(top.get("theme_id"))] if top.get("theme_id") else [])
+                            f"weeks against {_round(top.get('expected_recent'))} expected.", scoped, rows, True,
+                            int(top.get("n_recent", 0)), theme_ids=[str(top.get("theme_id"))] if top.get("theme_id") else [],
+                            numbers=[KeyNumber(label="calls in the last four weeks",
+                                               value=float(top.get("n_recent") or 0), result_id=env["result_id"])])
             lines.append(f"**{top.get('name')}** is {top.get('status')}: {top.get('n_recent')} calls in the last four "
-                         f"weeks against {top.get('expected_recent')} expected, first seen "
+                         f"weeks against {_round(top.get('expected_recent'))} expected, first seen "
                          f"{top.get('first_seen_week')} [{cid}].")
             for r in rows[1:4]:
                 lines.append(f"- {r.get('name')}: {r.get('status')}, {r.get('n_recent')} recent vs "
-                             f"{r.get('expected_recent')} expected.")
+                             f"{_round(r.get('expected_recent'))} expected.")
             if data.get("expected_false_positives") is not None:
-                caveats.append(f"About {data['expected_false_positives']} of {data.get('n_tested', '?')} themes tested "
+                caveats.append(f"About {_round(data['expected_false_positives'], 2)} of {data.get('n_tested', '?')} themes tested "
                                f"could pass this threshold by chance.")
             quotes = _quotes_for(ctx, con, "theme", str(top.get("theme_id")), filters, results, events, 2)
             charts.append(Chart(kind="bars", title="Emerging themes", result_id=env["result_id"], series_key="n_recent"))
