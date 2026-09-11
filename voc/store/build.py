@@ -5,7 +5,7 @@ import json
 import os
 import sqlite3
 import time
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 from pathlib import Path
 from typing import Any, Iterator
 
@@ -204,13 +204,25 @@ def insert_fts(con: sqlite3.Connection) -> None:
 # --- meta ---------------------------------------------------------------------------------
 
 def compute_as_of_week(con: sqlite3.Connection, min_calls: int = AS_OF_MIN_CALLS) -> str | None:
-    """Latest ISO week with >= min_calls calls; the latest week with any calls when none qualifies."""
-    row = con.execute("SELECT MAX(period) AS w FROM period_totals WHERE period_kind = 'week' AND n_calls >= ?",
-                      (min_calls,)).fetchone()
-    if row["w"]:
-        return row["w"]
-    row = con.execute("SELECT MAX(period) AS w FROM period_totals WHERE period_kind = 'week'").fetchone()
-    return row["w"]
+    """Latest complete ISO week with >= min_calls calls.
+
+    A corpus that ends mid-week leaves a partial last week; using it as the as-of point would put a
+    half-empty week inside the four-week recent window and understate every emerging signal."""
+    last = con.execute("SELECT MAX(date) AS d FROM calls").fetchone()
+    last_date = date.fromisoformat(last["d"]) if last and last["d"] else None
+    rows = con.execute("SELECT period, n_calls FROM period_totals WHERE period_kind = 'week' "
+                       "ORDER BY period DESC").fetchall()
+    fallback = rows[0]["period"] if rows else None
+    for row in rows:
+        if row["n_calls"] < min_calls:
+            continue
+        if last_date is not None:
+            year, week = row["period"].split("-W")
+            week_end = date.fromisocalendar(int(year), int(week), 7)
+            if week_end > last_date:      # the corpus stops inside this week
+                continue
+        return row["period"]
+    return fallback
 
 
 def qa_invariants(con: sqlite3.Connection) -> dict[str, Any]:

@@ -91,3 +91,16 @@ def test_as_of_replay_shows_the_signal_growing(fixture_db):
 def test_every_as_of_week_is_precomputed(fixture_db):
     weeks = fixture_db.execute("SELECT COUNT(DISTINCT as_of_week) AS n FROM emerging_scores").fetchone()["n"]
     assert weeks >= 20, "the slider needs a score for every as-of week"
+
+
+def test_as_of_week_is_never_a_partial_trailing_week(fixture_db):
+    """A corpus ending mid-week must not use that week: a half-empty week inside the recent
+    four-week window would understate every emerging signal."""
+    import datetime
+
+    as_of = get_meta(fixture_db, "as_of_week")
+    last_date = datetime.date.fromisoformat(
+        fixture_db.execute("SELECT MAX(date) AS d FROM calls").fetchone()["d"])
+    year, week = as_of.split("-W")
+    week_end = datetime.date.fromisocalendar(int(year), int(week), 7)
+    assert week_end <= last_date, f"{as_of} ends {week_end}, after the corpus ends {last_date}"
