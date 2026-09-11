@@ -155,18 +155,23 @@ def answer_offline(question: str, filters: Filters, con: sqlite3.Connection, *, 
         env = _call(ctx, con, "sentiment_drivers", {"polarity": "positive", "group_by": "driver_category",
                                                     "filters": fdump, "limit": 5}, results, events)
         rows = (env or {}).get("rows", [])
+        # Positive topics rarely clear minimum support on a complaint corpus; the moments carry the answer.
+        moments = ((env or {}).get("data") or {}).get("positive_moments_by_category") or []
+        ranked = rows or [{"name": m.get("category"), "n_calls": m.get("n_calls"), "quotes": m.get("quotes")}
+                          for m in moments]
         caveats.append("This is a complaint corpus, so these are positive moments inside complaints, "
                        "not a measure of overall satisfaction.")
-        if rows:
-            top = rows[0]
-            cid = add_claim(f"The most frequent positive moment is {top.get('name')} ({top.get('n_calls')} calls).",
-                            env, rows, True, int(top.get("n_calls", 0)))
+        if ranked:
+            top = ranked[0]
+            name = str(top.get("name") or "").replace("_", " ")
+            cid = add_claim(f"The most frequent positive moment is {name} ({top.get('n_calls')} calls).",
+                            env, ranked, True, int(top.get("n_calls", 0)))
             lines.append(f"Even inside complaints, customers name things that went right. The most frequent is "
-                         f"**{top.get('name')}** ({top.get('n_calls')} calls) [{cid}].")
-            for r in rows[1:4]:
-                lines.append(f"- {r.get('name')}: {r.get('n_calls')} calls.")
+                         f"**{name}** ({top.get('n_calls')} calls) [{cid}].")
+            for r in ranked[1:4]:
+                lines.append(f"- {str(r.get('name') or '').replace('_', ' ')}: {r.get('n_calls')} calls.")
             quotes = [Quote(evidence_id=q["evidence_id"], call_id=q["call_id"], quote=q["quote"], why="")
-                      for r in rows[:3] for q in (r.get("quotes") or [])[:1]]
+                      for r in ranked[:3] for q in (r.get("quotes") or [])[:1]]
 
     elif kind == "emerging":
         env = _call(ctx, con, "emerging_themes", {"as_of_week": as_of_week, "min_recent": 5, "only_new": False,

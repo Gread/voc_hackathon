@@ -62,11 +62,31 @@ export async function renderDrivers() {
       polarity: driverPolarity, group_by: driverPolarity === "positive" ? "driver_category" : "theme", limit: 6,
     });
     const rows = payload.rows || [];
+    const moments = (payload.data || {}).positive_moments_by_category || [];
     const out = clear(node);
     if (driverPolarity === "positive") {
-      out.appendChild(el("p", { class: "footnote", text: "Positive moments inside complaints - this corpus is complaints, not a satisfaction survey." }));
+      out.appendChild(el("p", { class: "footnote", text: payload.data?.corpus_note
+        ? `What went right, ${payload.data.corpus_note}.`
+        : "Positive moments inside complaints - this corpus is complaints, not a satisfaction survey." }));
+      // Positive topics rarely clear minimum support on a complaint corpus; the moments carry this panel.
+      for (const m of moments) {
+        const quote = (m.quotes || [])[0];
+        out.appendChild(el("div", { class: "row" }, [
+          el("div", { class: "row-head" }, [
+            el("span", { class: "row-name", text: label(m.category) }),
+            el("span", { class: "row-meta", text: `${num(m.n_calls)} calls · ${pct(m.share_pct)}` }),
+          ]),
+          bar((m.n_calls || 0) / Math.max(1, ...moments.map((x) => x.n_calls || 0)), "pos"),
+          quote ? el("p", { class: "quote" }, [
+            el("button", { class: "linkish", text: `"${quote.quote.slice(0, 150)}"`,
+                           onclick: () => openCall(quote.call_id, quote.quote) })]) : null,
+        ]));
+      }
     }
-    if (!rows.length) { out.appendChild(el("p", { class: "muted", text: "nothing above minimum support in this scope" })); return; }
+    if (!rows.length) {
+      if (!moments.length) out.appendChild(el("p", { class: "muted", text: "nothing above minimum support in this scope" }));
+      return;
+    }
     const max = Math.max(1, ...rows.map((r) => r.n_calls || 0));
     for (const row of rows) {
       const quote = (row.quotes || [])[0];

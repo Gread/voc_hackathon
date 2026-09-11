@@ -178,3 +178,17 @@ def test_ask_streams_and_always_finishes(client):
 
 def test_unknown_theme_is_404(client):
     assert client.get("/api/themes/thm_9999").status_code == 404
+
+
+def test_satisfaction_rests_on_positive_moments_and_can_be_recounted(con):
+    """On a complaint corpus positive topics rarely clear minimum support, so the answer has to come
+    from positive moments - and their call ids must be in the result or no claim can be verified."""
+    ctx = ToolContext(con=con, qhash="test", as_of_week=None)
+    env = run_tool("sentiment_drivers", {"polarity": "positive", "group_by": "driver_category",
+                                         "filters": {}, "limit": 5}, con, ctx)
+    moments = env["data"]["positive_moments_by_category"]
+    assert moments, "the fixture must carry positive moments"
+    assert env["data"]["corpus_note"]
+    assert env["n_call_ids"] > 0, "a satisfaction claim cannot be verified without call ids"
+    quoted = [q for m in moments for q in m.get("quotes", [])]
+    assert quoted and all(q["quote"] for q in quoted)

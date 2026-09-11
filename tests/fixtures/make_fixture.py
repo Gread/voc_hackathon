@@ -89,6 +89,17 @@ def build_fixture(data_dir: Path, seed: int = 7) -> dict:
                 quote = f"{statement}, and I want this fixed."
                 text = (f"On {day.isoformat()} I contacted the bank about my {product.replace('_', ' ')}. "
                         f"{quote} I have been a customer for years and expect better.")
+                # Every seventh complaint also names something that went right, as real ones do.
+                # Built before the record so the text the offsets point into is the stored text.
+                positives = []
+                if call_seq % 7 == 0:
+                    praise = "The branch manager did call me back the same day, which I appreciated."
+                    text = f"{text} {praise}"
+                    p_start = text.index(praise)
+                    positives.append({"what": "a callback that actually happened",
+                                      "category": "helpful_staff" if call_seq % 14 else "fast_resolution",
+                                      "quote": praise, "speaker": "narrative",
+                                      "char_start": p_start, "char_end": p_start + len(praise), "verified": 1})
                 iso_year, iso_week, _ = day.isocalendar()
                 calls.append({
                     "call_id": call_id, "source": "fixture", "shape": "narrative",
@@ -121,7 +132,7 @@ def build_fixture(data_dir: Path, seed: int = 7) -> dict:
                         "products": [product], "services": [], "customer_ask": "fix_error",
                         "stated_reason": statement[:160], "underlying_driver": statement[:200],
                         "reason_differs": False, "topics": [topic], "overall_sentiment": sentiment,
-                        "resolution_status": "unresolved", "positive_moments": [], "redaction_heavy": False,
+                        "resolution_status": "unresolved", "positive_moments": positives, "redaction_heavy": False,
                         "summary": statement[:200]},
                 })
                 members.append({"topic_id": f"{call_id}:0", "theme_id": theme_ids[key], "confidence": 0.95,

@@ -735,7 +735,9 @@ def sentiment_drivers(con: sqlite3.Connection, polarity: str, group_by: str, fil
         pms = q.rows(f"""
             SELECT pm.category, COUNT(DISTINCT pm.call_id) AS n_calls FROM positive_moments pm JOIN calls c ON c.call_id = pm.call_id
             WHERE pm.verified = 1 AND {where} GROUP BY pm.category ORDER BY n_calls DESC, pm.category""", params)
-        ex = q.rows(f"""
+        # q.calls so these call ids join the result: on a complaint corpus the moments, not the
+        # positive topics, are what a satisfaction claim actually rests on.
+        ex = q.calls(f"""
             SELECT pm.category, pm.pm_id, pm.call_id, pm.quote, pm.what FROM positive_moments pm JOIN calls c ON c.call_id = pm.call_id
             WHERE pm.verified = 1 AND {where} ORDER BY c.date DESC""", params)
         examples: dict[str, list[dict[str, Any]]] = {}
