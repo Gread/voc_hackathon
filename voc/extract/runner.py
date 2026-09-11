@@ -279,7 +279,9 @@ def report(calls: list[CallRecord], paths: Paths | None = None) -> dict[str, Any
     hist = Counter(r["extraction"]["overall_sentiment"] for r in ok)
     flags = Counter(f for r in rows for f in r.get("flags", []))
     out = {
-        "n_calls": len(calls), "n_ok": len(ok), "n_error": sum(1 for r in rows if r["status"] != "ok"),
+        "n_calls": len(calls), "n_ok": len(ok),
+        "n_error": sum(1 for r in rows if r["status"] not in ("ok", "stale")),
+        "n_stale": sum(1 for r in rows if r["status"] == "stale"),
         "n_missing": len(calls) - len(rows),
         "share_other_or_unclear": _share(sum(1 for p in primaries if p == "other_or_unclear"), len(ok)),
         "quote_verify_rate": _share(sum(q["verified"] for q in quotes), len(quotes)),
@@ -290,7 +292,9 @@ def report(calls: list[CallRecord], paths: Paths | None = None) -> dict[str, Any
         "redaction_heavy_share": _share(sum(1 for r in ok if r["extraction"]["redaction_heavy"]), len(ok)),
         "produced_by": dict(Counter(r.get("produced_by") for r in rows)),
         "flags": dict(sorted(flags.items())),
-        "errors": [{"call_id": r["call_id"], "error": r["error"]} for r in rows if r["status"] != "ok"][:20],
+        "errors": [{"call_id": r["call_id"], "error": r["error"]}
+                   for r in rows if r["status"] not in ("ok", "stale")][:20],
+        "stale": [r["call_id"] for r in rows if r["status"] == "stale"][:20],
     }
     print(json.dumps(out, indent=1, ensure_ascii=False))
     paths.work.mkdir(parents=True, exist_ok=True)
