@@ -286,7 +286,14 @@ def summarize(tool: str, payload: dict[str, Any], scope: dict[str, Any]) -> str:
         t = data.get("totals", {})
         top = ", ".join(f"{r.get('label') or r.get('reason')} {r.get('n_calls')}" for r in (data.get("top_reasons") or [])[:3])
         return f"{t.get('n_calls', 0)} calls, {t.get('n_topics', 0)} topics, {t.get('n_active_themes', 0)} themes; top reasons: {top}"
-    if tool in ("contact_reasons", "list_themes", "sentiment_drivers", "emerging_themes", "breakdown", "compare"):
+    if tool == "emerging_themes":
+        # These rows count the recent window, not the whole scope; n_calls would read as zero.
+        head = "; ".join(f"{r.get('name')} {r.get('status')} {r.get('n_recent', 0)} recent vs "
+                         f"{round(r.get('expected_recent') or 0, 1)} expected (z {round(r.get('z') or 0, 1)})"
+                         for r in rows[:3])
+        return (f"{len(rows)} themes flagged at {data.get('as_of_week', '')} of {data.get('n_tested', 0)} tested"
+                + (f"; {head}" if head else "; nothing above the threshold"))
+    if tool in ("contact_reasons", "list_themes", "sentiment_drivers", "breakdown", "compare"):
         head = ", ".join(str(r.get("name") or r.get("label") or r.get("reason") or r.get("value") or r.get("key"))
                          + f" ({r.get('n_calls', r.get('n_a', 0))})" for r in rows[:3])
         return f"{len(rows)} rows over {n_scope} calls in scope" + (f"; {head}" if head else "")

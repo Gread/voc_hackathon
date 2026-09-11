@@ -212,8 +212,9 @@ def test_get_call_payload_matches_what_the_call_drawer_reads(con):
     spans = [e for t in topics for e in t.get("evidence", [])]
     assert spans, "topics must carry their evidence"
     for e in spans:
-        if not e.get("verified"):
-            continue
+        # get_call returns verified evidence only and drops the flag, so there is nothing to skip
+        # on here: every span the drawer receives has to highlight correctly.
+        assert "verified" not in e, "an unverified quote must never reach the drawer"
         assert data["text"][e["char_start"]:e["char_end"]] == e["quote"], \
             "offsets must point at the quote or the highlight lands on the wrong words"
 
@@ -229,3 +230,16 @@ def test_panels_loading_at_once_do_not_race(client):
         results = list(pool.map(lambda p: (p, client.get(p)), paths))
     bad = [(p, r.status_code, r.text[:200]) for p, r in results if r.status_code != 200]
     assert not bad, bad
+
+
+def test_the_emerging_summary_reports_the_recent_window(con):
+    """Emerging rows count the recent window, not the whole scope. Summarizing them with n_calls
+    printed every flagged theme as "(0)" - the one line the agent reads to decide what to pull."""
+    from voc.agent.tools import summarize
+
+    payload = {"rows": [{"name": "Deposit held far longer than promised", "status": "emerging",
+                         "n_recent": 6, "expected_recent": 1.87, "z": 3.11, "n_calls": 0}],
+               "data": {"as_of_week": "2026-W26", "n_tested": 11}}
+    line = summarize("emerging_themes", payload, {"n_calls_in_scope": 4425})
+    assert "6 recent" in line and "1.9 expected" in line
+    assert "(0)" not in line
