@@ -133,9 +133,16 @@ voc/api/        FastAPI endpoints and the event stream
 voc/web/        the dashboard: static ES modules, vendored Chart.js, no build step
 ```
 
-The presentation deck is [docs/voc_insights_deck.pptx](docs/voc_insights_deck.pptx). Every number on it is
-read from the index by `python docs/make_deck.py`, so it cannot drift from the data; re-run that after a
-`build-db` and the slides update themselves.
+Two decks, both generated from the live index and code so they cannot drift:
+
+```bash
+python docs/make_deck.py        # the solution: problem, five steps, findings
+python docs/make_arch_deck.py   # the architecture: tools, envelope, offline and live paths
+```
+
+They land at [docs/voc_insights_deck.pptx](docs/voc_insights_deck.pptx) and
+[docs/voc_architecture_deck.pptx](docs/voc_architecture_deck.pptx). Re-run them after a `build-db` and the
+slides update themselves.
 
 See [docs/DESIGN.md](docs/DESIGN.md) for the full design, [docs/BUILD_LOG.md](docs/BUILD_LOG.md) for what
 was built and what the real data showed, [TEAM_GUIDE.md](TEAM_GUIDE.md) for how to extend it, and
