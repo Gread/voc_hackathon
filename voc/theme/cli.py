@@ -16,6 +16,7 @@ PASSES = ("seed", "consolidate", "reassign", "stability")
 def _options(args: argparse.Namespace) -> ThemeOptions:
     return ThemeOptions(
         batch_size=getattr(args, "batch_size", 100),
+        sequential=getattr(args, "sequential", 5),
         concurrency=getattr(args, "concurrency", 4),
         limit_buckets=getattr(args, "limit_buckets", None),
         on_miss=("skip" if getattr(args, "skip_missing", False) else "raise"),
@@ -47,6 +48,9 @@ def add_parser(subparsers: Any) -> None:
 
 def _common(p: argparse.ArgumentParser) -> None:
     p.add_argument("--batch-size", type=int, default=100)
+    p.add_argument("--sequential", type=int, default=5,
+                   help="batches per bucket that grow the registry one at a time; lower means fewer "
+                        "export/import waves and more duplicate themes for consolidation to merge")
     p.add_argument("--concurrency", type=int, default=4)
     p.add_argument("--limit-buckets", type=int, default=None)
     p.add_argument("--skip-missing", action="store_true", help="leave buckets pending instead of failing on a cache miss")
