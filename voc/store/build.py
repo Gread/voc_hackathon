@@ -312,8 +312,16 @@ def build(paths: Paths | None = None, run_trends: bool = True, quiet: bool = Fal
         con.execute("PRAGMA wal_checkpoint(TRUNCATE)")
     finally:
         con.close()
-    _remove_db_files(paths.sqlite)
-    os.replace(tmp_db, paths.sqlite)
+    try:
+        _remove_db_files(paths.sqlite)
+        os.replace(tmp_db, paths.sqlite)
+    except PermissionError as exc:
+        # On Windows a running `voc serve` keeps the index open, so the finished build cannot replace it.
+        _remove_db_files(tmp_db)
+        raise BuildRefused(
+            f"{paths.sqlite} is open in another process, so the rebuilt index could not replace it. "
+            f"Stop `voc serve` (or whatever is holding it) and run `voc build-db` again. "
+            f"The old index is untouched and still usable.") from exc
     _remove_db_files(Path(str(tmp_db)))  # leftover -wal/-shm of the tmp file, if any
     write_meta_json(paths, meta)
     if not quiet:
