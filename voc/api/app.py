@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import json
 import sqlite3
+import threading
 from pathlib import Path
 from typing import Any
 
@@ -51,14 +52,18 @@ def create_app(data_dir: Path | None = None) -> FastAPI:
     settings = get_settings()
     app = FastAPI(title="Voice of the Customer Insights", version="0.1.0",
                   description="Agents read every contact; the server verifies every number.")
-    state: dict[str, Any] = {"con": None, "error": None}
+    state: dict[str, Any] = {"error": None}
+    # One connection per worker thread. FastAPI runs sync endpoints in a threadpool and the
+    # dashboard opens several panels at once; sharing one connection interleaves cursors.
+    local = threading.local()
 
     def db() -> sqlite3.Connection:
-        if state["con"] is None:
+        con = getattr(local, "con", None)
+        if con is None:
             if not paths.sqlite.exists():
                 raise HTTPException(503, "no index yet: run `voc build-db`")
-            state["con"] = connect(paths.sqlite)
-        return state["con"]
+            con = local.con = connect(paths.sqlite)
+        return con
 
     def envelope(payload: dict[str, Any], con: sqlite3.Connection) -> JSONResponse:
         payload.setdefault("data_version", get_meta(con, "data_version", "") or "")

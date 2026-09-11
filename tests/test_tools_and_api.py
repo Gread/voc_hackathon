@@ -216,3 +216,16 @@ def test_get_call_payload_matches_what_the_call_drawer_reads(con):
             continue
         assert data["text"][e["char_start"]:e["char_end"]] == e["quote"], \
             "offsets must point at the quote or the highlight lands on the wrong words"
+
+
+def test_panels_loading_at_once_do_not_race(client):
+    """The dashboard opens several panels at once. One shared SQLite connection across the
+    threadpool interleaves cursors, and a COUNT(*) comes back with no rows at all."""
+    import concurrent.futures as cf
+
+    paths = ["/api/overview", "/api/drivers?polarity=negative", "/api/drivers?polarity=positive",
+             "/api/emerging", "/api/themes?limit=5", "/api/reasons?compare=1"] * 4
+    with cf.ThreadPoolExecutor(max_workers=8) as pool:
+        results = list(pool.map(lambda p: (p, client.get(p)), paths))
+    bad = [(p, r.status_code, r.text[:200]) for p, r in results if r.status_code != 200]
+    assert not bad, bad
