@@ -20,6 +20,16 @@ from voc.store.db import connect, db_is_stale, get_meta
 WEB_DIR = Path(__file__).resolve().parent.parent / "web"
 
 
+class NoCacheStatic(StaticFiles):
+    """Browsers cache ES modules hard, which makes an edited .js file look unchanged after a refresh.
+    There is no build step here, so ask for revalidation on every request instead."""
+
+    def file_response(self, *args: Any, **kwargs: Any) -> Any:
+        response = super().file_response(*args, **kwargs)
+        response.headers["Cache-Control"] = "no-cache, must-revalidate"
+        return response
+
+
 def _filters_from_request(request: Request) -> Filters:
     params: dict[str, Any] = {}
     for dim in DIMENSIONS:
@@ -274,7 +284,7 @@ def create_app(data_dir: Path | None = None) -> FastAPI:
                                  headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"})
 
     if WEB_DIR.exists():
-        app.mount("/static", StaticFiles(directory=WEB_DIR), name="static")
+        app.mount("/static", NoCacheStatic(directory=WEB_DIR), name="static")
 
         @app.get("/")
         def index() -> FileResponse:

@@ -3,7 +3,7 @@
 import { api } from "./api.js";
 import { openCall, openCallList } from "./calldrawer.js";
 import { openTheme } from "./themecard.js";
-import { bar, clear, el, label, num, pct, signed, statusPill } from "./format.js";
+import { bar, clear, el, label, num, pct, pctOf, signed, statusPill } from "./format.js";
 import { queryParams, state } from "./state.js";
 import { trendChart } from "./charts.js";
 
@@ -38,7 +38,7 @@ export async function renderReasons() {
         el("div", { class: "row-head" }, [
           el("span", { class: "row-name", text: label(row.label || row.reason) }),
           el("span", { class: "row-meta" }, [
-            document.createTextNode(`${num(row.n_calls)} · ${pct(row.share ?? row.share_pct)}`),
+            document.createTextNode(`${num(row.n_calls)} · ${row.share !== undefined && row.share !== null ? pct(row.share) : pctOf(row.share_pct)}`),
             delta ? el("span", { class: `delta ${delta > 0 ? "up" : "down"}`, text: ` ${signed(delta)} pts` }) : null,
             dir && dir !== "flat" ? el("span", { class: `delta ${dir === "rising" ? "up" : "down"}`, text: ` ${dir}` }) : null,
           ]),
@@ -74,7 +74,7 @@ export async function renderDrivers() {
         out.appendChild(el("div", { class: "row" }, [
           el("div", { class: "row-head" }, [
             el("span", { class: "row-name", text: label(m.category) }),
-            el("span", { class: "row-meta", text: `${num(m.n_calls)} calls · ${pct(m.share_pct)}` }),
+            el("span", { class: "row-meta", text: `${num(m.n_calls)} calls · ${pctOf(m.share_pct)}` }),
           ]),
           bar((m.n_calls || 0) / Math.max(1, ...moments.map((x) => x.n_calls || 0)), "pos"),
           quote ? el("p", { class: "quote" }, [

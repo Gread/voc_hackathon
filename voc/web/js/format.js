@@ -31,10 +31,17 @@ export function clear(node) {
 export const num = (v) => (v === null || v === undefined || Number.isNaN(Number(v))
   ? "-" : Number(v).toLocaleString("en-US"));
 
+/** A fraction (0.031) rendered as a percentage. Never pass a value that is already a percentage:
+ *  0.4 meaning "0.4 per cent" is indistinguishable from 0.4 meaning "40 per cent". */
 export function pct(v, digits = 1) {
   if (v === null || v === undefined || Number.isNaN(Number(v))) return "-";
-  const n = Number(v);
-  return `${(n <= 1 && n >= -1 ? n * 100 : n).toFixed(digits)}%`;
+  return `${(Number(v) * 100).toFixed(digits)}%`;
+}
+
+/** A value that is already a percentage (3.1 -> "3.1%"). */
+export function pctOf(v, digits = 1) {
+  if (v === null || v === undefined || Number.isNaN(Number(v))) return "-";
+  return `${Number(v).toFixed(digits)}%`;
 }
 
 export const signed = (v, digits = 1) =>
