@@ -70,14 +70,23 @@ def create_app(data_dir: Path | None = None) -> FastAPI:
                          "rows": result.get("rows", []), "data": result.get("data", {}),
                          "call_ids": call_ids[:50], "n_call_ids": len(call_ids), "sql": sql}, con)
 
-    @app.on_event("startup")
-    def _startup() -> None:
+    @app.exception_handler(Q.NotFound)
+    def _not_found(_request: Request, exc: Q.NotFound) -> JSONResponse:
+        return JSONResponse({"detail": str(exc)}, status_code=404)
+
+    @app.exception_handler(Q.QueryError)
+    def _bad_query(_request: Request, exc: Q.QueryError) -> JSONResponse:
+        return JSONResponse({"detail": str(exc)}, status_code=400)
+
+    def _rebuild_if_stale() -> None:
         if paths.calls.exists() and db_is_stale(paths):
             try:
                 from voc.store.build import build
                 build(paths, quiet=True)
             except Exception as exc:  # a stale index is better than no server
                 state["error"] = f"automatic rebuild failed: {exc}"
+
+    _rebuild_if_stale()
 
     @app.get("/api/meta")
     def meta() -> JSONResponse:

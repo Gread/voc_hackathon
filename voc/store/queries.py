@@ -227,6 +227,8 @@ def as_of_or_meta(con: sqlite3.Connection, as_of_week: str | None) -> str | None
 
 def resolve_theme_id(con: sqlite3.Connection, theme_id: str) -> str:
     """Follow merged_into chains to the effective theme; NotFound for unknown ids."""
+    if not theme_id:
+        raise QueryError("a theme id is required")
     seen: set[str] = set()
     current = theme_id
     while current not in seen:
