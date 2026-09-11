@@ -29,7 +29,7 @@ export const api = {
   quotes: (f, opts = {}) => getJSON("/api/quotes", { ...f, ...opts }),
   search: (q, f) => getJSON("/api/search", { ...f, q }),
   call: (id) => getJSON(`/api/calls/${encodeURIComponent(id)}`),
-  resultRows: (resultId) => getJSON(`/api/results/${encodeURIComponent(resultId)}/rows`),
+  resultRows: (resultId, qhash) => getJSON(`/api/results/${encodeURIComponent(resultId)}/rows` + (qhash ? `?qhash=${encodeURIComponent(qhash)}` : "")),
   questions: () => getJSON("/api/questions"),
   answer: (qhash) => getJSON(`/api/answers/${encodeURIComponent(qhash)}`),
 };

@@ -6,6 +6,7 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+import gc
 import json
 import os
 from pathlib import Path
@@ -118,3 +119,22 @@ def _capture(capsys, fn) -> str:
     capsys.readouterr()
     fn()
     return capsys.readouterr().out
+
+
+def test_the_calls_behind_a_recorded_number_survive_an_index_rebuild(demo_dir, capsys):
+    """The demo clicks "n calls" on a recorded claim. Tool results live only in the derived index,
+    so without restoring them a fresh clone replays the answer and 404s on every drill-down."""
+    test_record_verify_and_replay_a_demo_answer(demo_dir, capsys)
+    stored = next(s for s in cache_mod.load_files())
+    result_id = next(ev["payload"]["result_id"] for ev in stored.trace if ev.get("name") == "tool_result")
+
+    gc.collect()                                # drop the connections the replay opened
+    build(get_paths(demo_dir), quiet=True)      # rebuilds the index from files, as a fresh clone does
+
+    con = connect(demo_dir / "voc.sqlite")
+    row = con.execute("SELECT sql FROM tool_results WHERE result_id = ? AND qhash = ?",
+                      (result_id, stored.qhash)).fetchone()
+    assert row is not None, "the rebuild must re-register the recorded answer's tool results"
+
+    from voc.store import queries as Q
+    assert Q.rerun_call_ids(con, json.loads(row["sql"])), "re-executing the stored query must find its calls"

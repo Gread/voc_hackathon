@@ -306,6 +306,12 @@ def build(paths: Paths | None = None, run_trends: bool = True, quiet: bool = Fal
             "sampling_fraction": profile.get("sampling_fraction"), "source": profile.get("source"),
         }
         meta.update(qa_invariants(con))
+        # Recorded answers are files; the index is derived. Bring them back so a fresh clone can
+        # replay them and still open the calls behind each number.
+        from voc.agent import cache as answer_cache
+        n_answers = answer_cache.sync_table(con)
+        if not quiet and n_answers:
+            print(f"build-db: {n_answers} recorded answer(s) restored")
         for key, value in meta.items():
             set_meta(con, key, value)
         con.commit()

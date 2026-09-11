@@ -30,6 +30,18 @@ def _list_tools() -> int:
     return 0
 
 
+def _session_qhash(session_path: Path | None) -> str:
+    """Persist under the recording session's own qhash, which is what finalize verifies against.
+    Result ids restart at r1 per session, so a shared qhash lets one recording overwrite another's."""
+    if session_path is None:
+        return "cli"
+    meta = session_path.parent / (session_path.name.removesuffix(".tools.jsonl") + ".json")
+    try:
+        return json.loads(meta.read_text(encoding="utf-8"))["qhash"]
+    except (OSError, ValueError, KeyError):
+        return session_path.stem
+
+
 def run(args: argparse.Namespace) -> int:
     if args.name in ("list", "--list"):
         return _list_tools()
@@ -47,7 +59,7 @@ def run(args: argparse.Namespace) -> int:
 
     con = connect()
     session_path = Path(args.session) if args.session else None
-    ctx = ToolContext(con=con, qhash=session_path.stem if session_path else "cli",
+    ctx = ToolContext(con=con, qhash=_session_qhash(session_path),
                       as_of_week=args.as_of or get_meta(con, "as_of_week"))
     if session_path and session_path.exists():
         ctx.counter = sum(1 for line in session_path.read_text(encoding="utf-8").splitlines() if line.strip())

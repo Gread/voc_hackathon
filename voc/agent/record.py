@@ -133,7 +133,8 @@ def finalize(args: argparse.Namespace) -> int:
     # the tool CLI already persisted tool_results rows; results here are the envelopes for verification
     note, _ = scope_note(con, filters)
     verified = verify_answer(answer, results, con, as_of_week=ctx.as_of_week, data_version=ctx.data_version,
-                             mode="recorded", model=args.model, footnote=ctx.footnote, scope_note=note)
+                             mode="recorded", model=args.model, qhash=meta["qhash"],
+                             footnote=ctx.footnote, scope_note=note)
     report = verified.validation
     headline_unverified = any((not c.verified) and c.headline for c in verified.claims)
     print(json.dumps({"claims": [{"id": c.id, "verified": c.verified, "n": c.verified_n, "badge": c.confidence.badge if c.confidence else "",

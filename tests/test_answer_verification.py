@@ -47,10 +47,10 @@ def _answer(**kw) -> Answer:
     return Answer.model_validate(base)
 
 
-def verify(con, answer):
+def verify(con, answer, qhash="q"):
     return verify_answer(answer, {"r1": {"result_id": "r1", "rows": [{"n_calls": 60, "share": 0.5}], "data": {},
                                          "scope": {"n_calls_in_scope": 60}}},
-                         con, as_of_week="2026-W26", data_version="v1", mode="live", model="test")
+                         con, as_of_week="2026-W26", data_version="v1", mode="live", model="test", qhash=qhash)
 
 
 def test_claim_is_recounted_from_call_ids(con):
@@ -124,3 +124,19 @@ def test_confidence_tiers():
     thin = compute_confidence({"n": 60, "months": 4, "products": 3, "states": 9,
                                "recent_share": 0.1, "evidence_share": 0.2})
     assert thin.thin_evidence and "thin evidence" in thin.badge
+
+
+def test_another_questions_result_ids_never_count_toward_this_claim(con):
+    """Result ids restart at r1 for every question. Before this was scoped, a second recording
+    overwrote the first's row and claims were recounted against a stranger's calls."""
+    con.execute("INSERT INTO tool_results(result_id, qhash, tool, args, sql, call_ids, created_at) "
+                "VALUES ('r1','other_question','list_themes','{}','[]',?, '2026-09-11')",
+                (json.dumps(["c1", "c2", "c3"]),))
+    con.commit()
+
+    assert verify(con, _answer()).claims[0].verified_n == 60, "its own question's 60 calls, not the other's 3"
+
+    # A claim citing a result this question never ran is unsupported, not counted from someone else's row.
+    orphan = verify(con, _answer(), qhash="a_question_that_ran_nothing").claims[0]
+    assert orphan.verified is False
+    assert "not_supported_by_retrieved_data" in orphan.flags

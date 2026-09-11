@@ -231,17 +231,28 @@ def create_app(data_dir: Path | None = None) -> FastAPI:
             raise HTTPException(404, str(exc)) from exc
 
     @app.get("/api/results/{result_id}/rows")
-    def result_rows(result_id: str) -> JSONResponse:
+    def result_rows(result_id: str, qhash: str | None = None) -> JSONResponse:
         con = db()
-        row = con.execute("SELECT tool, args, sql, call_ids FROM tool_results WHERE result_id = ?", (result_id,)).fetchone()
+        # Result ids restart at r1 for every question, so the asking question decides which row
+        # this is; without one, fall back to the most recently stored.
+        row = None
+        if qhash:
+            row = con.execute("SELECT tool, args, sql, call_ids FROM tool_results WHERE result_id = ? AND qhash = ?",
+                              (result_id, qhash)).fetchone()
+        if row is None:
+            row = con.execute("SELECT tool, args, sql, call_ids FROM tool_results WHERE result_id = ? "
+                              "ORDER BY created_at DESC LIMIT 1", (result_id,)).fetchone()
         if row is None:
             raise HTTPException(404, f"unknown result {result_id}")
         stored_ids = json.loads(row["call_ids"] or "[]")
         statements = json.loads(row["sql"] or "[]")
         rerun = Q.rerun_call_ids(con, statements)
         ids = rerun or stored_ids
+        # A result restored from a recorded answer's trace keeps the query, not the id list, so
+        # there is nothing to compare against and nothing has drifted.
+        matches = None if not stored_ids else sorted(ids) == sorted(stored_ids)
         return envelope({"result_id": result_id, "tool": row["tool"], "n_call_ids": len(ids),
-                         "reran": bool(rerun), "matches_stored": sorted(ids) == sorted(stored_ids),
+                         "reran": bool(rerun), "matches_stored": matches,
                          "sql": statements, "rows": Q.call_list(con, ids[:200])}, con)
 
     @app.get("/api/questions")

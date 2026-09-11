@@ -64,7 +64,8 @@ function renderAnswer(answer, results) {
         claim.verified_n ? document.createTextNode(" ") : null,
         claim.verified_n && claim.result_ids?.length
           ? el("button", { class: "linkish", text: `${num(claim.verified_n)} calls`,
-                           onclick: () => openCallList(claim.result_ids[0], claim.statement?.slice(0, 60) || "Calls") })
+                           onclick: () => openCallList(claim.result_ids[0], claim.statement?.slice(0, 60) || "Calls",
+                                                       answer.result_qhash) })
           : null,
         ...(claim.theme_ids || []).map((t) =>
           el("button", { class: "linkish", text: " theme", onclick: () => openTheme(t) })),
@@ -132,9 +133,10 @@ export async function ask(question, { fresh = false } = {}) {
   };
 
   controller = new AbortController();
+  let answerQhash = null;   // result ids restart at r1 per question
   try {
     await askStream({ question, filters: queryParams(), as_of: state.asOf || null, fresh }, (name, payload) => {
-      if (name === "status") addTrace(`· ${payload.text ?? ""}`);
+      if (name === "status") { if (payload.qhash) answerQhash = payload.qhash; addTrace(`· ${payload.text ?? ""}`); }
       else if (name === "thinking") addTrace(`· thinking: ${(payload.text ?? "").slice(0, 120)}`);
       else if (name === "tool_call") addTrace(`→ ${payload.name}(${JSON.stringify(payload.args ?? {}).slice(0, 110)})`);
       else if (name === "tool_result") {
@@ -145,13 +147,14 @@ export async function ask(question, { fresh = false } = {}) {
         ]);
         trace.appendChild(details);
         if (payload.result_id) {
-          api.resultRows(payload.result_id).then((r) => { results[payload.result_id] = r; }).catch(() => {});
+          api.resultRows(payload.result_id, answerQhash).then((r) => { results[payload.result_id] = r; }).catch(() => {});
         }
       } else if (name === "answer_delta") {
         if (!node.contains(deltaNode)) node.appendChild(deltaNode);
         deltaNode.innerHTML = markdown((deltaNode.dataset.text = (deltaNode.dataset.text || "") + payload.text));
       } else if (name === "answer") {
         answered = true;
+        answerQhash = payload.answer?.result_qhash || answerQhash;
         renderAnswer({ ...payload.answer, question }, results);
       } else if (name === "error") {
         addTrace(`! ${payload.message ?? "error"}`);

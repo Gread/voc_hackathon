@@ -267,7 +267,7 @@ def persist_result(con: sqlite3.Connection, qhash: str, result_id: str, tool: st
     try:
         con.execute(
             "INSERT INTO tool_results(result_id, qhash, tool, args, sql, call_ids, created_at) VALUES (?,?,?,?,?,?,?) "
-            "ON CONFLICT(result_id) DO UPDATE SET qhash=excluded.qhash, tool=excluded.tool, args=excluded.args, "
+            "ON CONFLICT(qhash, result_id) DO UPDATE SET tool=excluded.tool, args=excluded.args, "
             "sql=excluded.sql, call_ids=excluded.call_ids, created_at=excluded.created_at",
             (result_id, qhash, tool, json.dumps(args, ensure_ascii=False, default=str),
              json.dumps(sql, ensure_ascii=False, default=str), json.dumps(call_ids),

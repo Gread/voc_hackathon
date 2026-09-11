@@ -113,7 +113,32 @@ def sync_table(con: sqlite3.Connection) -> int:
     files = load_files()
     for s in files:
         upsert_row(con, s)
+        restore_tool_results(con, s)
     return len(files)
+
+
+def restore_tool_results(con: sqlite3.Connection, s: StoredAnswer) -> int:
+    """Re-register a recorded answer's tool results from its trace, so "which calls?" still opens
+    after the index is rebuilt. The trace keeps the statements, not the id list, so the ids are
+    re-executed on demand; an existing row is left alone because it already has the full list."""
+    n = 0
+    for ev in s.trace or []:
+        if ev.get("name") != "tool_result":
+            continue
+        payload = ev.get("payload") or {}
+        rid, sql = payload.get("result_id"), payload.get("sql")
+        if not rid or not isinstance(sql, list):
+            continue
+        try:
+            con.execute("INSERT OR IGNORE INTO tool_results(result_id, qhash, tool, args, sql, call_ids, created_at) "
+                        "VALUES (?,?,?,?,?,?,?)",
+                        (rid, s.qhash, payload.get("name") or "", "{}",
+                         json.dumps(sql, ensure_ascii=False, default=str), "[]", s.created_at or ""))
+            n += 1
+        except sqlite3.Error:
+            return n
+    con.commit()
+    return n
 
 
 def load_answer(con: sqlite3.Connection | None, h: str) -> StoredAnswer | None:

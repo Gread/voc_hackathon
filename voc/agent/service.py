@@ -139,11 +139,12 @@ def _finish(question: str, filters: Filters, ctx: AskContext, answer: Answer, re
             trace: list[dict[str, Any]], *, mode: str, model: str, effort: str, usage: dict[str, Any] | None,
             persist: bool) -> VerifiedAnswer:
     note, _ = scope_note(ctx.con, filters)
+    qh = cache_mod.qhash(question, filters, ctx.as_of_week, ctx.data_version)
     verified = verify_answer(answer, results, ctx.con, as_of_week=ctx.as_of_week, data_version=ctx.data_version,
-                             mode=mode, model=model, footnote=ctx.footnote, scope_note=note)
+                             mode=mode, model=model, qhash=qh, footnote=ctx.footnote, scope_note=note)
     if persist:
         stored = cache_mod.StoredAnswer(
-            qhash=cache_mod.qhash(question, filters, ctx.as_of_week, ctx.data_version), question=question,
+            qhash=qh, question=question,
             filters=filters.canonical(), as_of_week=ctx.as_of_week, data_version=ctx.data_version,
             prompt_version=ASK_PROMPT_VERSION, mode=mode, model=model, effort=effort,
             answer=verified.model_dump(), trace=trace, validation=verified.validation, usage=usage or {})
@@ -164,6 +165,7 @@ async def _replay(stored: cache_mod.StoredAnswer, note: str | None = None) -> As
     answer["mode"] = "recorded" if stored.mode in ("live", "recorded") else stored.mode
     answer["recorded_question"] = stored.question
     answer["recorded_at"] = stored.created_at
+    answer["result_qhash"] = stored.qhash
     yield encode_event("answer", {"answer": answer})
     yield encode_event("done", {})
 
@@ -197,7 +199,7 @@ async def _live(question: str, filters: Filters, ctx: AskContext, qh: str, n_in_
     if run.outcome == "submitted" and run.answer is not None:
         verified = _finish(question, filters, ctx, run.answer, run.results, trace, mode="live", model=run.model,
                            effort=run.effort, usage=run.usage, persist=persist)
-        yield encode_event("answer", {"answer": verified.model_dump()})
+        yield encode_event("answer", {"answer": {**verified.model_dump(), "result_qhash": qh}})
     else:
         reason = {"text_only": "the agent answered in prose without submitting a structured answer",
                   "timeout": "the agent ran out of time", "refusal": "the model declined",
@@ -207,7 +209,7 @@ async def _live(question: str, filters: Filters, ctx: AskContext, qh: str, n_in_
         trace += events
         verified = _finish(question, filters, ctx, answer, results, trace, mode="templated", model="none",
                            effort="", usage=run.usage, persist=False)
-        yield encode_event("answer", {"answer": verified.model_dump()})
+        yield encode_event("answer", {"answer": {**verified.model_dump(), "result_qhash": qh}})
     yield encode_event("done", {})
 
 
@@ -256,7 +258,9 @@ async def stream_answer(question: str, filters: Filters | dict[str, Any] | None,
             yield encode_event(name, dict(ev.get("payload") or {}))
     verified = _finish(question, filters, ctx, answer, results, events, mode="templated", model="none", effort="",
                        usage=None, persist=False)
-    yield encode_event("answer", {"answer": verified.model_dump()})
+    yield encode_event("answer", {"answer": {**verified.model_dump(),
+                                             "result_qhash": cache_mod.qhash(question, filters, ctx.as_of_week,
+                                                                             ctx.data_version)}})
     yield encode_event("done", {})
 
 

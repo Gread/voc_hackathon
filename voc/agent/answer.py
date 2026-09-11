@@ -56,10 +56,17 @@ def _number_matches(value: float, pool: set[float]) -> tuple[bool, float | None]
     return False, best
 
 
-def full_call_ids(con: sqlite3.Connection, result_id: str, envelope: dict[str, Any] | None) -> list[str]:
-    """Full call-id list of a tool result: the persisted record first, the envelope as fallback."""
+def full_call_ids(con: sqlite3.Connection, result_id: str, envelope: dict[str, Any] | None,
+                  qhash: str = "") -> list[str]:
+    """Full call-id list of a tool result: the persisted record first, the envelope as fallback.
+
+    Result ids restart at r1 for every question, so the lookup is scoped by qhash. A row belonging
+    to another question is never used: recounting a claim against a stranger's calls is worse than
+    reporting the claim as unsupported.
+    """
     try:
-        row = con.execute("SELECT call_ids FROM tool_results WHERE result_id = ?", (result_id,)).fetchone()
+        row = con.execute("SELECT call_ids FROM tool_results WHERE result_id = ? AND qhash = ?",
+                          (result_id, qhash)).fetchone() if qhash else None
     except sqlite3.Error:
         row = None
     if row and row["call_ids"]:
@@ -70,10 +77,13 @@ def full_call_ids(con: sqlite3.Connection, result_id: str, envelope: dict[str, A
         except json.JSONDecodeError:
             pass
     if envelope:
-        for key in ("call_ids_full", "call_ids"):
-            ids = envelope.get(key)
-            if isinstance(ids, list):
-                return [str(x) for x in ids]
+        if isinstance(envelope.get("call_ids_full"), list):
+            return [str(x) for x in envelope["call_ids_full"]]
+        ids = envelope.get("call_ids")
+        # An envelope shows at most MAX_CALL_IDS_SHOWN ids. Recounting a truncated list would
+        # report a confident wrong number, so treat it as no evidence at all.
+        if isinstance(ids, list) and int(envelope.get("n_call_ids") or len(ids)) <= len(ids):
+            return [str(x) for x in ids]
     return []
 
 
@@ -196,6 +206,7 @@ def verify_answer(
     data_version: str,
     mode: str,
     model: str,
+    qhash: str = "",
     footnote: str = "",
     scope_note: str = "",
 ) -> VerifiedAnswer:
@@ -211,7 +222,7 @@ def verify_answer(
             vc.flags.append(f"unknown_result_ids:{','.join(missing)}")
         union: list[str] = []
         for rid in known:
-            union.extend(full_call_ids(con, rid, results.get(rid)))
+            union.extend(full_call_ids(con, rid, results.get(rid), qhash))
         ids = list(dict.fromkeys(union))
         # A tool result shows at most MAX_CALL_IDS_SHOWN ids, so a claim quoting that many means
         # "this whole result"; only a shorter list is a deliberate subset worth narrowing to.

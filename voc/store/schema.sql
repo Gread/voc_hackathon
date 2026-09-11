@@ -135,7 +135,9 @@ CREATE TABLE answers_cache (
 );
 
 CREATE TABLE tool_results (
-    result_id TEXT PRIMARY KEY, qhash TEXT, tool TEXT NOT NULL, args TEXT, sql TEXT, call_ids TEXT, created_at TEXT
+    result_id TEXT NOT NULL, qhash TEXT NOT NULL, tool TEXT NOT NULL, args TEXT, sql TEXT,
+    call_ids TEXT, created_at TEXT,
+    PRIMARY KEY (qhash, result_id)
 );
 
 CREATE TABLE run_log (

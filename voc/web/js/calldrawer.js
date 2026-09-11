@@ -148,13 +148,13 @@ export function initDrawer() {
 }
 
 /** A list of calls behind a number, opened from any "n calls" link. */
-export async function openCallList(resultId, title = "Calls behind this number") {
+export async function openCallList(resultId, title = "Calls behind this number", qhash = null) {
   const node = drawer();
   node.hidden = false;
   clear(body()).appendChild(el("p", { class: "muted", text: "loading calls…" }));
   let payload;
   try {
-    payload = await api.resultRows(resultId);
+    payload = await api.resultRows(resultId, qhash);
   } catch (err) {
     clear(body()).appendChild(el("p", { class: "muted", text: `could not load: ${err.message}` }));
     return;
