@@ -57,16 +57,21 @@ known answers. Three honest caveats, two of which the UI states out loud:
    quotes, what the customer asked for, and the stated reason versus the underlying driver. The complaint
    form's own product and issue labels are deliberately never shown to the extractor, which keeps them free
    as an agreement metric.
-2. **Connect to the collective.** Topics are bucketed by driver category and polarity, then three LLM
-   passes seed a theme registry, consolidate near-duplicates through an audit trail that never deletes
-   membership, and re-assign every topic against the frozen registry. A theme is one problem with one
-   plausible cause that one team could fix.
+2. **Connect to the collective.** Topics are bucketed by driver category and polarity, then four passes
+   seed a theme registry, consolidate near-duplicates through an audit trail that never deletes membership,
+   rewrite every name and definition so the name alone tells a product owner what the problem is, and
+   re-assign every topic against the frozen registry. A theme is one problem with one plausible cause that
+   one team could fix. 5,827 issue statements become 128 themes; re-judging a 10% sample independently
+   agrees with the original assignment 88.1% of the time. The largest theme is 394 contacts written 397
+   different ways. Statements that fit nothing are left in a per-category catch-all, counted in every total
+   but never ranked or flagged as emerging.
 3. **Watch the shape over time.** Counts by ISO week, with an emerging score comparing the last four weeks
    against the sixteen before (Poisson z with a Jeffreys pseudo-count, minimum support of five calls in at
    least two weeks). Scores are precomputed for *every* as-of week, so the dashboard slider replays a theme
    from its first handful of calls.
 4. **Answer plain-language questions.** An agent takes the question, chooses what to pull from twelve
-   read-only tools, and submits a structured answer.
+   read-only tools, and submits a structured answer. All eight questions from the briefing are recorded and
+   replay offline in about two seconds each, with the trace visible.
 5. **Show evidence and confidence.** The server recounts every claim from call ids before it is rendered,
    checks each quoted number against the tool result it cites, drops quotes that are not verified evidence,
    and computes the confidence tier itself. Claims it cannot support are shown greyed with the correction

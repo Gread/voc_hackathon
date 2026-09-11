@@ -9,15 +9,18 @@ building it.
 | | |
 |---|---|
 | Pipeline stages | all twelve command stages work, no stubs |
-| Tests | 103 passing, no network and no API key needed |
+| Tests | 106 passing, no network and no API key needed |
 | CI | suite plus an end-to-end smoke on Python 3.11 and 3.13 |
 | Corpus | 4,425 real complaints, 24 months, one bank |
 | Step 1, read every call | **complete** - 4,425 of 4,425, zero errors |
-| Step 2, group into themes | in progress - two of roughly five waves |
-| Step 3, trends and emerging | working, verified against planted patterns |
-| Step 4, plain-language answers | working, verified for all eight questions |
-| Step 5, evidence and confidence | working, verified including refusal to support a bad claim |
-| Code | ~9,400 lines Python, ~1,200 JavaScript, ~1,500 test |
+| Step 2, group into themes | **complete** - 128 active themes, 5,827 statements, agreement 0.881 |
+| Step 3, trends and emerging | **complete**, verified against planted patterns and replayed on real weeks |
+| Step 4, plain-language answers | **complete** - all eight recorded, 35 claims, every one verified |
+| Step 5, evidence and confidence | **complete**, verified including refusal to support a bad claim |
+| Code | ~9,500 lines Python, ~1,200 JavaScript, ~1,600 test |
+
+The proof of concept is finished. Everything the briefing asks for runs end to end on real data, offline,
+with no API key.
 
 ## Decisions taken, and why
 
@@ -62,9 +65,19 @@ names the agents produced read like work items: *an overdraft fee charged althou
 showed as available*; *a fraud claim denied by citing the PIN or chip as proof it was authorised*; *branch
 and phone support each redirect to the other*. None of those exist as options on a complaint form.
 
-**Grouping converges.** By the second wave, 67% of statements joined a theme that already existed rather
-than needing a new one, and two whole categories needed no new themes at all. That is "many complaints
-become one problem" measured rather than asserted.
+**Grouping converges, and the result holds up.** By the second wave, 67% of statements joined a theme that
+already existed rather than needing a new one; by the last, 96% did. Four passes over 5,827 statements ended
+at 128 active themes. Re-judging a 10% sample independently against the frozen registry agreed with the
+original assignment 88.1% of the time, above the 0.80 the design asks for.
+
+**The headline number is the one the briefing wanted.** The largest theme is *a fraud dispute denied without
+reviewing the evidence*: 394 contacts, written 397 different ways, across 6 products and 41 states. The
+near one-to-one ratio of wordings to contacts holds down the whole top ten. No keyword rule finds those
+contacts together, which is precisely why the volume was invisible.
+
+**781 statements sit in per-category catch-alls rather than being forced into a theme.** They are counted in
+every total, so shares stay honest, but they are never ranked or flagged as emerging. An absence of a theme
+is not a theme.
 
 **Satisfaction has to come from positive moments.** On a complaint corpus almost no topic carries positive
 sentiment, so ranking positive topics returns nothing. 292 verified positive moments do exist inside these
@@ -143,6 +156,23 @@ index is still usable, and cleans up.
 **Near-miss values were discarded.** A customer saying a problem is partly fixed now reads as unresolved
 rather than unknown, with the substitution flagged.
 
+**The dashboard's panels raced each other.** Six panels open at once; FastAPI runs sync endpoints in a
+threadpool, and all of them shared one SQLite connection. Concurrent requests interleaved cursors on it, so
+a `COUNT(*)` came back with no rows at all and the panel that lost the race showed a bare 500. It looked
+intermittent because it was. Connections are now per thread.
+
+**A recorded answer could verify against another question's calls.** Result ids restart at `r1` for every
+question, but the table holding them was keyed on the result id alone, so two recordings running at once
+overwrote each other. A claim about 421 calls came back confidently recounted as a different question's
+394, and reported itself verified. That is worse than failing. Results are now keyed by question as well,
+the verifier never falls back to another question's row, and a truncated id list counts as no evidence
+rather than as fifty calls. All eight answers were re-recorded under the fix.
+
+**Clicking "n calls" on a recorded answer broke after a rebuild.** Tool results live only in the derived
+index, so a fresh clone could replay an answer and then fail to open any of the calls behind it. The
+rebuild now re-registers them from the answer's own trace, which keeps the query rather than the id list,
+so the calls are re-executed on demand.
+
 ## What was verified, and how
 
 Not "it compiles" but "it does the thing":
@@ -166,15 +196,19 @@ Not "it compiles" but "it does the thing":
 
 ## What is left
 
-1. **Finish theme grouping.** Roughly three more waves of the export-fill-import cycle, then consolidation
-   of near-duplicate themes and a re-assignment pass against the frozen registry, then a stability check.
-   Commands are in the README; the cycle is described in TEAM_GUIDE.
-2. **Rebuild the index** (`voc build-db`) so themes reach the interface.
-3. **Record the eight demo answers** (`voc record-answer`), so the demo replays instantly offline.
-4. **Rehearse** against `docs/demo_script.md`.
+Rehearsal, against `docs/demo_script.md`. Nothing in the pipeline is outstanding.
 
-With an API key in `.env`, steps 1 and 3 run unattended (`voc theme run`, `voc warm-answers`) instead of
-through agents.
+Two things a team picking this up might want next, neither needed for the demo:
+
+1. **A golden set.** `voc qa export-golden` writes a stratified 40-record sample and a review sheet for two
+   people; `score-golden` turns their verdicts into accuracy numbers. The agreement figure we have is
+   agreement between two labelling schemes, not accuracy.
+2. **More themes in two thin registries.** Re-assignment left recurring causes with no home: overdraft fees
+   charged despite the customer opting out, annual fees not refunded when the bank closed the card, and
+   debt-validation complaints that were never validated. Each is a real cluster, not noise.
+
+With an API key in `.env`, the theming and the answers run unattended (`voc theme run`, `voc warm-answers`)
+instead of through build-time agents.
 
 ## Things to know before changing anything
 

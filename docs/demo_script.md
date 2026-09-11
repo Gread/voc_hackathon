@@ -64,13 +64,23 @@ python -c "import json;[print(r['call_id'],'|',json.loads(l)['extraction']['stat
 
 ## 2:30 – 3:30 Q5 · Are customers describing the same underlying problem in different ways?
 
-From that answer, click the top theme name. The card opens.
+This is the strongest moment in the demo. From that answer, click the top theme name. The card opens:
+*Fraud dispute denied without reviewing the evidence*, 394 calls, 397 wordings, 6 products.
 
-> "N calls, K different wordings, P products."
+> "Three hundred and ninety-four contacts. Three hundred and ninety-seven different ways of saying it.
+> Effectively no two customers used the same words."
 
-Expand the wordings list.
+Expand the wordings list and read three that share no vocabulary at all: a stolen card used at festival
+stalls with no cameras, a timeshare company given eighteen months, a document upload page that only
+reopened after the weekend.
 
-> "Different words. One problem. One cause. Each of these is a link to the call it came from."
+> "No keyword rule finds those three together. There is no shared phrase to search for. And the ratio
+> holds all the way down the top ten: 397 wordings over 394 contacts at the top, 99 over 97 at the tenth."
+
+Then the consequence, which is the part a bank cares about:
+
+> "It spans six products and forty-one states, so every product owner and every regional queue sees a
+> handful of unrelated-looking cases instead of the one 394-contact failure they are all part of."
 
 If the theme has merge history, point at it.
 
@@ -89,19 +99,32 @@ Point at the footer line.
 > "And here is how many of the themes we tested could pass this threshold by chance. We tell you the error
 > rate rather than hiding it."
 
-Now drag the **as-of slider** back twelve weeks, then press ▶.
+At the latest week exactly one theme clears the bar, and saying so is part of the point.
 
-> "This is the same data as it looked week by week. The signal starts at a handful of calls and climbs.
-> A sampled dashboard sees this months later. Nothing here is planted: these scores are precomputed for
-> every week in the window."
+> "One theme clears it today. A detector that fires every week is a detector nobody reads."
+
+Now the replay, which is the real moment. Set the **as-of slider** to **2025-W38** and step forward a week
+at a time. Watch *Claim investigation runs past its deadline with no status*:
+
+| As-of week | Recent calls | Expected | z | Status |
+|---|---|---|---|---|
+| 2025-W38 | 1 | 3.2 | -1.14 | nothing |
+| 2025-W40 | 6 | 1.9 | 2.63 | **emerging** |
+| 2025-W42 | 9 | 2.1 | 4.33 | growing |
+| 2025-W45 | 7 | 3.3 | 1.86 | settled |
+
+> "Quiet, quiet, then six calls against two expected and it fires. By the time it is nine calls a monthly
+> report would still be a month away. Nothing here is planted: these scores are precomputed for every week
+> in the window, so this is genuinely what the system would have told you that Monday."
 
 ## 4:45 – 5:20 Q3 · Which experiences create satisfaction, what should we protect?
 
 Click the chip. Let the caveat be the point.
 
-> "This is a complaints corpus, so the honest answer is not a satisfaction score. What it can show is the
-> moments that went right inside complaints: a branch that fixed it in ten minutes, a refund that arrived.
-> The system says what its evidence can and cannot bear."
+> "This is a complaints corpus, so the honest answer is not a satisfaction score. Ranking positive themes
+> returns nothing at all. What it can show is the 421 contacts that carry a moment which went right:
+> helpful staff in 169, a fair outcome in 124, a fast resolution in 102. The system says what its evidence
+> can and cannot bear, and it says it without being asked."
 
 ## 5:20 – 5:50 Q6 · How do pain points differ by product, segment or region?
 
@@ -161,4 +184,14 @@ python -m voc serve
 ```
 
 Check the mode badge does not say FAKE DATA, walk the eight chips once, and leave the as-of slider at the
-latest week.
+latest week. All eight replay from recordings, each one about two seconds, so none of them needs a key.
+
+Numbers as of the current index, in case a slide needs them:
+
+| | |
+|---|---|
+| Contacts read | 4,425 over 24 months, 5,827 topics |
+| Themes | 128 active, 154 counted, 1,478 distinct wordings |
+| Largest theme | fraud dispute denied without reviewing the evidence, 394 contacts, 397 wordings |
+| Grouping agreement | 0.881 on a 563-statement re-judgement |
+| Quotes verifying | 99.7% |
