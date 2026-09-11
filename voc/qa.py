@@ -101,9 +101,11 @@ def report(args: argparse.Namespace) -> int:
     print("extraction quality")
     for key, value in metrics.items():
         print(f"  {key:<{width}}  {value}")
+    # Agreement compares two labelling schemes, so it is a drift alarm, not a score.
     expect = []
     if metrics.get("reason_agreement") is not None and not 0.55 <= metrics["reason_agreement"] <= 0.95:
-        expect.append(f"reason agreement {metrics['reason_agreement']} is outside the expected 0.55-0.95")
+        expect.append(f"reason agreement {metrics['reason_agreement']} is outside the expected 0.55-0.95; "
+                      f"inspect the disagreements before blaming the extractor")
     if metrics.get("other_or_unclear_share", 0) > 0.15:
         expect.append(f"abstention share {metrics['other_or_unclear_share']} is high (> 0.15)")
     if metrics.get("quote_verify_rate") is not None and metrics["quote_verify_rate"] < 0.9:
