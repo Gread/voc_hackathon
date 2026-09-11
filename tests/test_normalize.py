@@ -75,3 +75,24 @@ def test_raw_to_call_handles_missing_metadata(page):
     both = raw_to_call(by_id["9000005"], 0.5)
     assert both.segment == "older_american_servicemember" and both.meta["zip3"] is None
     assert both.product == "money_transfer_or_p2p"
+
+
+def test_bytes_repr_narratives_are_decoded():
+    """A small share of narratives arrive as a Python bytes repr, sometimes truncated mid-string."""
+    from voc.ingest.normalize import normalize_narrative
+
+    bs = chr(92)
+    assert normalize_narrative("b'Hello" + bs + "nWorld'") == "Hello\nWorld"
+    assert normalize_narrative('b"Subject: Theft' + bs + 'nDetails"') == "Subject: Theft\nDetails"
+    # truncated by the regulator's length cap: no closing quote
+    assert normalize_narrative("b'I am the victim" + bs + "nDetails XXXX") == "I am the victim\nDetails XXXX"
+    long_repr = "b'Ive reached out to Chase about these charges. " + ("XXXX " * 40)
+    assert normalize_narrative(long_repr).startswith("Ive reached out")
+
+
+def test_customer_contractions_are_never_rewritten():
+    """Their exact words matter more than a tidy prefix, so ambiguous text is left alone."""
+    from voc.ingest.normalize import normalize_narrative
+
+    for text in ("b'cause they never called back", "b'ut nobody answered"):
+        assert normalize_narrative(text) == text

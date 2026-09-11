@@ -130,7 +130,8 @@ def test_stale_key_and_error_marker_are_pending(calls_dir: Path):
     p.write_text(json.dumps(payload), encoding="utf-8")
     main(["extract", "--load"])
     row = next(r for r in _rows(calls_dir) if r["call_id"] == "cfpb_9000003")
-    assert row["status"] == "error" and row["error"].startswith("stale cache key")
+    # A moved prompt, taxonomy or text is work to redo, not a failed extraction.
+    assert row["status"] == "stale" and row["error"].startswith("stale cache key")
     assert {c.call_id for c in runner.select_pending(calls)} == {"cfpb_9000003"}
     assert main(["extract"]) == 0
     assert all(r["status"] == "ok" for r in _rows(calls_dir))

@@ -1,6 +1,7 @@
 """Text normalisation for CFPB narratives, raw -> CallRecord mapping and small file helpers."""
 from __future__ import annotations
 
+import ast
 import json
 import os
 import re
@@ -26,9 +27,39 @@ def collapse_blank_lines(text: str) -> str:
     return _BLANK_RUN_RE.sub("\n\n", text)
 
 
+def decode_bytes_repr(text: str) -> str:
+    """A small share of narratives reach the API as a Python bytes repr (b'...' with literal escapes),
+    sometimes truncated mid-string by the regulator's length cap. Recover the real text; leave anything
+    that still does not parse exactly as it came."""
+    stripped = text.strip()
+    if not stripped.startswith(("b'", 'b"')):
+        return text
+    quote = stripped[1]
+    closed = stripped.endswith(quote) and len(stripped) >= 3
+    escaped = any(chr(92) + ch in stripped for ch in "ntrx")
+    # A long narrative opening with a capital is a repr; "b'cause they never called back" is a customer's
+    # contraction. When in doubt leave the text alone: their exact words matter more than a tidy prefix.
+    looks_like_a_narrative = len(stripped) >= 200 and stripped[2:3].isupper()
+    if not (closed or escaped or looks_like_a_narrative):
+        return text
+    candidates = [stripped] if closed else []
+    # A truncated repr has no closing quote (and may end mid-escape); close it and retry.
+    candidates.append(stripped.rstrip(chr(92)) + quote)
+    for candidate in candidates:
+        try:
+            value = ast.literal_eval(candidate)
+        except (ValueError, SyntaxError):
+            continue
+        if isinstance(value, bytes):
+            return value.decode("utf-8", errors="replace")
+        if isinstance(value, str):
+            return value
+    return text
+
+
 def normalize_narrative(text: str) -> str:
     """Exactly what the extractor sees: NFC + LF (normalize_text), unwrapped amounts, no blank-line runs."""
-    return normalize_text(collapse_blank_lines(unwrap_amounts(normalize_text(text))))
+    return normalize_text(collapse_blank_lines(unwrap_amounts(normalize_text(decode_bytes_repr(text)))))
 
 
 def word_count(text: str) -> int:

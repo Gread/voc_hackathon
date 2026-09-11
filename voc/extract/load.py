@@ -57,7 +57,9 @@ def validate_cache_payload(call: CallRecord, payload: dict[str, Any]) -> dict[st
     created_at = payload.get("created_at")
     expected = cache_key(call.text_sha)
     if payload.get("key") != expected:
-        return make_row(call, status="error", produced_by=produced_by, model=model, extracted_at=created_at,
+        # The prompt, schema, taxonomy or text moved on, so this cache file is simply work to redo,
+        # not a failed extraction: report it as pending so the runner picks the record up again.
+        return make_row(call, status="stale", produced_by=produced_by, model=model, extracted_at=created_at,
                         error=f"stale cache key: expected {expected[:12]}..., file has "
                               f"{str(payload.get('key'))[:12]}... (prompt, schema, taxonomy or text changed)")
     if payload.get("response") is None:
@@ -96,8 +98,10 @@ def consolidate(calls: list[CallRecord], paths: Paths | None = None,
     rows.sort(key=lambda r: r["call_id"])
     write_jsonl_atomic(paths.extractions, rows)
     n_ok = sum(1 for r in rows if r["status"] == "ok")
-    stats = {"n_calls": len(calls), "n_rows": len(rows), "n_ok": n_ok, "n_error": len(rows) - n_ok,
-             "n_missing": len(calls) - len(rows)}
+    n_stale = sum(1 for r in rows if r["status"] == "stale")
+    stats = {"n_calls": len(calls), "n_rows": len(rows), "n_ok": n_ok, "n_stale": n_stale,
+             "n_error": len(rows) - n_ok - n_stale, "n_missing": len(calls) - len(rows)}
+    stale_note = f", stale {stats['n_stale']}" if stats["n_stale"] else ""
     print(f"loaded {stats['n_rows']} rows -> {paths.extractions} "
-          f"(ok {stats['n_ok']}, error {stats['n_error']}, missing {stats['n_missing']})")
+          f"(ok {stats['n_ok']}, error {stats['n_error']}{stale_note}, missing {stats['n_missing']})")
     return stats
