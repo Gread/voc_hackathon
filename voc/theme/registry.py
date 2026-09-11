@@ -15,7 +15,7 @@ from voc.config import get_settings
 from voc.llm.client import LLMCacheMiss, LLMClient, LLMRequest, LLMResult, Usage
 from voc.llm.cost import estimate_usd
 from voc.schemas.theme import THEME_PROMPT_VERSION, Member, MergeRecord, Theme
-from voc.theme.buckets import split_bucket
+from voc.theme.buckets import bucket_slug, split_bucket
 
 CAP_PER_BUCKET = 60
 MIN_CONFIDENCE = 0.5
@@ -115,8 +115,19 @@ class Registry:
     def save(self, path: Path) -> None:
         write_json(path, self.to_dict())
 
-    def _next_id(self) -> str:
-        return f"thm_{len(self.themes) + 1:04d}"
+    def _next_id(self, bucket: str) -> str:
+        """Ids are numbered within their own bucket.
+
+        A global counter made a bucket's ids depend on how many themes every other bucket had already
+        created, so one bucket gaining a theme renumbered another's. That invalidated cached batches and,
+        worse, could re-point assignments already written against the old numbering."""
+        slug = bucket_slug(bucket)
+        n = sum(1 for t in self.themes.values() if t.get("bucket") == bucket)
+        while True:
+            n += 1
+            candidate = f"thm_{slug}_{n:03d}"
+            if candidate not in self.themes:
+                return candidate
 
     def get(self, theme_id: str) -> dict[str, Any]:
         return self.themes[theme_id]
@@ -144,7 +155,7 @@ class Registry:
              examples: list[str] | None = None) -> dict[str, Any]:
         dc, pol = split_bucket(bucket)
         t = normalize_theme({
-            "theme_id": self._next_id(), "name": clip(name, LIMITS["name"]) or f"theme {len(self.themes) + 1}",
+            "theme_id": self._next_id(bucket), "name": clip(name, LIMITS["name"]) or f"theme {len(self.themes) + 1}",
             "problem_statement": clip(problem, LIMITS["problem_statement"]), "root_cause": clip(root_cause, LIMITS["root_cause"]),
             "polarity": pol, "driver_category": dc, "bucket": bucket, "status": status, "merged_into": None,
             "created_pass": created_pass, "codebook_version": self.codebook_version,
