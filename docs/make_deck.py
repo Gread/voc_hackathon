@@ -205,10 +205,24 @@ def quote_card(slide, text, *, top, height, accent=ACCENT, size=15):
     para(frame, text, size=size, italic=True, color=INK, space_after=0, first=True)
 
 
+def fits_one_line(text: str, size: float, width_in: float, bold: bool = False) -> bool:
+    """Rough Segoe UI advance width. Used to fail the build rather than clip text on a slide."""
+    per_char = size * (0.53 if bold else 0.50) / 72.0
+    return len(str(text)) * per_char <= width_in
+
+
 def table(slide, headers, rows, *, top, widths, size=13, highlight=()):
     left = MARGIN
     row_h = Inches(0.38)
     total = sum(widths, Emu(0))
+    # A table row is one line tall. Text that would wrap gets clipped in PowerPoint, which is how
+    # truncated copy reaches a stage unnoticed, so refuse to build instead.
+    for cells in rows:
+        for cell, w in zip(cells, widths):
+            avail = Emu(w).inches - 0.28
+            if not fits_one_line(cell, size, avail):
+                raise SystemExit(f"deck: {str(cell)[:60]!r} needs more than {avail:.2f}in at {size}pt; "
+                                 f"shorten the copy or widen the column")
     head = slide.shapes.add_shape(1, left, top, total, row_h)
     head.fill.solid()
     head.fill.fore_color.rgb = RGBColor(0xEC, 0xEB, 0xE3)

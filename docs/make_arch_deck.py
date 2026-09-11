@@ -18,8 +18,35 @@ from make_deck import (ACCENT, BODY_W, H, INK, MARGIN, MUTED, PAPER, POSITIVE, R
 ROOT = Path(__file__).resolve().parent.parent
 CODE_SUFFIXES = (".py", ".js", ".css", ".html")
 
+# Slide copy: the code's own descriptions are written for the model and are far too long for a table
+# cell. The tool NAMES still come from TOOL_SPECS, and a tool without a line here fails the build, so
+# this can go stale in wording but never in coverage.
+TOOL_GLOSS = {
+    "get_overview": "Totals, volume by month, top reasons and themes, the sentiment split",
+    "contact_reasons": "Reasons ranked, with change on the previous period and the customer's words",
+    "list_themes": "Themes ranked by calls, negative mass, emerging score or wordings",
+    "theme_detail": "One theme in full: definition, cause, every distinct wording, its weekly series",
+    "theme_trend": "Weekly or monthly series for up to six themes or reasons",
+    "emerging_themes": "What is new, emerging, growing or fading at a chosen as-of week",
+    "sentiment_drivers": "What drives sentiment, with the specific triggers and two verified quotes",
+    "breakdown": "One entity by product, channel, region or segment, with lift and suppression",
+    "compare": "Two filtered scopes side by side, and what differs most between them",
+    "get_quotes": "Verified verbatim statements, spread across months and products",
+    "search_calls": "Full-text search over the contact texts and the extracted statements",
+    "get_call": "One contact in full: text, metadata, everything extracted, its themes",
+    "submit_answer": "The final answer: claims, quotes, charts, caveats and follow-ups",
+}
+
 
 # --- facts, read from the code and the index --------------------------------------------------
+
+def _gloss(name: str) -> str:
+    """A tool with no slide copy is a build failure, not a silently missing row."""
+    try:
+        return TOOL_GLOSS[name]
+    except KeyError:
+        raise SystemExit(f"docs/make_arch_deck.py: add a TOOL_GLOSS line for the new tool {name!r}") from None
+
 
 def facts() -> dict:
     from voc.agent.tools import READ_TOOLS, TOOL_SPECS
@@ -49,7 +76,7 @@ def facts() -> dict:
 
     tests = len(list((ROOT / "tests").glob("test_*.py")))
     return {
-        "tools": [{"name": s["name"], "desc": s["description"].split(".")[0],
+        "tools": [{"name": s["name"], "desc": _gloss(s["name"]),
                    "args": list(s["input_schema"]["properties"])} for s in TOOL_SPECS],
         "n_read_tools": len(READ_TOOLS), "modules": modules, "cache": cache, "tables": tables,
         "answers": answers, "meta": meta, "test_files": tests,
@@ -139,7 +166,7 @@ def build(f: dict, out: Path) -> Path:
         box(s, Emu(int(MARGIN + pad + i * (widths + gap))), Inches(2.55), widths, Inches(0.9),
             title=title, lines_=body, title_size=11.5, body_size=9.5)
 
-    lane(s, Inches(3.85), Inches(1.15), "derived  ·  rebuilt in seconds, never protected")
+    lane(s, Inches(3.85), Inches(1.15), "derived  ·  rebuilt in seconds")
     box(s, Emu(int(MARGIN + pad)), Inches(4.2), Emu(int(BODY_W - 2 * pad)), Inches(0.65),
         title="data/voc.sqlite", lines_=[f"{len(f['tables'])} tables, materialised trends and emerging scores "
                                          f"for every as-of week  ·  `voc build-db` recreates it from the files above"],
@@ -181,7 +208,7 @@ def build(f: dict, out: Path) -> Path:
     # 4. The tools
     s = blank(prs)
     heading(s, "The tools", f"{f['n_read_tools']} read-only tools, plus one that ends the turn")
-    rows = [[t["name"], t["desc"][:74]] for t in f["tools"] if t["name"] != "submit_answer"]
+    rows = [[t["name"], t["desc"]] for t in f["tools"] if t["name"] != "submit_answer"]
     table(s, ["Tool", "What it returns"], rows, top=Inches(2.22),
           widths=[Inches(3.0), Inches(8.6)], size=11.5)
     sub = next(t for t in f["tools"] if t["name"] == "submit_answer")
