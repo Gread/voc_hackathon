@@ -98,11 +98,27 @@ def run_export(args: argparse.Namespace) -> int:
 
 
 def run_import(args: argparse.Namespace) -> int:
-    """Agent-written cache files are replayed by the cached client, so import = re-run the pass."""
-    from voc.theme.bundles import verify_bundle_cache
+    """Agent-written cache files are replayed by the cached client, so import = re-run the pass.
 
-    missing = verify_bundle_cache(Path(args.dir))
+    A batch's identity depends on the registry earlier batches built, so one import is one wave: when the
+    pass still needs work, the next wave is exported into the same directory."""
+    from voc.theme.bundles import export_bundles, verify_bundle_cache
+
+    directory = Path(args.dir)
+    missing = verify_bundle_cache(directory)
     if missing:
-        print(f"{len(missing)} cache file(s) still missing, first: {missing[0]}", file=sys.stderr)
+        print(f"{len(missing)} of the exported bundles have no cache file yet; first: {missing[0]}\n"
+              f"Fill them as described in {directory / 'README.md'}, then run import again.", file=sys.stderr)
         return 3
-    return _run_one(args.pass_name, args)
+
+    args.skip_missing = True          # let every bucket that can proceed, proceed
+    code = _run_one(args.pass_name, args)
+    if code not in (0, 3):
+        return code
+    remaining = export_bundles(directory, args.pass_name, _options(args))
+    if remaining:
+        print(f"\nwave complete. {remaining} bundle(s) now waiting in {directory}; fill them and run "
+              f"`python -m voc theme import --dir {directory} --pass {args.pass_name}` again.")
+        return 3
+    print(f"\n{args.pass_name} pass complete: nothing left to fill.")
+    return 0
