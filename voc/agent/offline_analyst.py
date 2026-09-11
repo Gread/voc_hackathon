@@ -119,11 +119,13 @@ def answer_offline(question: str, filters: Filters, con: sqlite3.Connection, *, 
             movers = [r for r in rows if (r.get("direction") or "flat") != "flat"]
             if movers:
                 m = movers[0]
-                cid2 = add_claim(f"{m.get('label', m.get('reason'))} is {m.get('direction')} "
-                                 f"({m.get('n_calls')} calls, {m.get('delta_share_pts', 0)} share points).", env, rows, False,
-                                 int(m.get("n_calls", 0)))
-                lines.append(f"The clearest movement is **{m.get('label', m.get('reason'))}**, {m.get('direction')} "
-                             f"by {m.get('delta_share_pts', 0)} share points [{cid2}].")
+                name = m.get("label", m.get("reason"))
+                # A share delta needs a comparable previous period; without one only the trend is meaningful.
+                by_points = (f" by {m.get('delta_share_pts')} share points"
+                             if float(m.get("n_previous") or 0) > 0 else "")
+                cid2 = add_claim(f"{name} is {m.get('direction')} ({m.get('n_calls')} calls{by_points}).",
+                                 env, rows, False, int(m.get("n_calls", 0)))
+                lines.append(f"The clearest movement is **{name}**, {m.get('direction')}{by_points} [{cid2}].")
             lines.append("Other frequent reasons: " + ", ".join(
                 f"{r.get('label', r.get('reason'))} ({r.get('n_calls')})" for r in rows[1:4]) + ".")
             charts.append(Chart(kind="bars", title="Contact reasons", result_id=env["result_id"], series_key="n_calls"))

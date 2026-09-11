@@ -1,0 +1,39 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version: ["3.11", "3.13"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+          cache: pip
+      - name: Install
+        run: pip install -e ".[dev]"
+      - name: Tests
+        # No network and no API key: the suite runs on fixtures with the fake LLM client.
+        env:
+          VOC_LLM: fake
+        run: pytest -q
+      - name: End-to-end smoke
+        env:
+          VOC_LLM: fake
+        run: |
+          python tests/fixtures/make_fixture.py "$RUNNER_TEMP/data"
+          VOC_DATA_DIR="$RUNNER_TEMP/data" python -m voc build-db
+          VOC_DATA_DIR="$RUNNER_TEMP/data" python -m voc qa
+          VOC_DATA_DIR="$RUNNER_TEMP/data" python -m voc tool get_overview --args '{"filters":{}}' > /dev/null
+          VOC_DATA_DIR="$RUNNER_TEMP/data" python -m voc ask "What are customers contacting us about most?" --quiet
+      - name: Front-end syntax
+        run: |
+          node --check voc/web/app.js
+          for f in voc/web/js/*.js; do node --check "$f"; done
