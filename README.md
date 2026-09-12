@@ -2,7 +2,7 @@
 
 Turning thousands of contact-centre conversations into evidence-based insight, with agents doing the reading.
 
-A proof of concept for the hackathon briefing of 11 September 2026. It reads every customer contact into
+A proof of concept for the hackathon briefing of 22 September 2026. It reads every customer contact into
 a consistent structure, groups differently-worded descriptions of the same experience into themes, watches
 how those themes move week by week, and answers plain-language business questions with counts, trends,
 quotes and a confidence that the server computes rather than the model claims.
