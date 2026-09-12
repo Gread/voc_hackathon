@@ -133,7 +133,16 @@ voc/api/        FastAPI endpoints and the event stream
 voc/web/        the dashboard: static ES modules, vendored Chart.js, no build step
 ```
 
-Two decks, both generated from the live index and code so they cannot drift:
+One picture of the whole system, for a room that has five minutes rather than an hour:
+[docs/voc_architecture.png](docs/voc_architecture.png) (vector source:
+[voc_architecture.svg](docs/voc_architecture.svg)). It reads on two levels against one spine, the
+business outcome above each step and the engineering below it.
+
+```bash
+python docs/make_diagram.py
+```
+
+Two longer decks, all three generated from the live index and code so they cannot drift:
 
 ```bash
 python docs/make_deck.py        # the solution: problem, five steps, findings
