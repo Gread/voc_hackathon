@@ -18,7 +18,12 @@ from xml.sax.saxutils import escape
 
 ROOT = Path(__file__).resolve().parent.parent
 
-W, H = 1760, 940
+W, H = 1760, 978
+
+# The dataset, named on the drawing. A bank audience asks this first.
+SOURCE_NAME = "CFPB Consumer Complaint Database"
+SOURCE_OWNER = "US Consumer Financial Protection Bureau"
+SOURCE_URL = "consumerfinance.gov/data-research/consumer-complaints"
 MARGIN = 56
 INK = "#14171C"
 PAPER = "#FAFAF7"
@@ -35,6 +40,20 @@ MONO = "'Cascadia Mono',Consolas,'SF Mono',monospace"
 
 # --- numbers, read from the index --------------------------------------------------------------
 
+# The regulator stores company names in capitals. Title case mangles them ("Jpmorgan"), so the
+# known ones are spelled out and anything else falls back to title case.
+COMPANY_DISPLAY = {"JPMORGAN CHASE & CO.": "JPMorgan Chase & Co."}
+
+
+def display_company(raw: str) -> str:
+    return COMPANY_DISPLAY.get(raw.strip().upper(), raw.title())
+
+
+def _month_name(iso: str) -> str:
+    y, m, _ = iso.split("-")
+    return f"{['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'][int(m) - 1]} {y}"
+
+
 def facts() -> dict:
     meta = json.loads((ROOT / "data/meta.json").read_text(encoding="utf-8"))
     con = sqlite3.connect(ROOT / "data/voc.sqlite")
@@ -45,13 +64,19 @@ def facts() -> dict:
     head = con.execute(
         "SELECT name, n_calls, n_wordings FROM themes WHERE status='active' ORDER BY n_calls DESC LIMIT 1"
     ).fetchone()
+    lo, hi = con.execute("SELECT MIN(date), MAX(date) FROM calls").fetchone()
+    profile = json.loads((ROOT / "data/profile.json").read_text(encoding="utf-8"))
     from voc.agent.tools import READ_TOOLS
     return {
         "calls": meta["n_calls"],
         "statements": meta["n_members"],
         "themes": one("SELECT COUNT(*) FROM themes WHERE status='active'"),
         "quote_rate": meta["qa_quote_verify_rate"],
-        "months": meta["months"] if "months" in meta else 24,
+        "months": one("SELECT COUNT(DISTINCT month) FROM calls"),
+        "company": display_company(meta["company"]),
+        "window": f"{_month_name(lo)} to {_month_name(hi)}",
+        "eligible": profile["n_eligible"],
+        "fraction": profile["sampling_fraction"],
         "head_name": head[0], "head_calls": head[1], "head_wordings": head[2],
         "n_tools": len(READ_TOOLS),
         "answers": one("SELECT COUNT(*) FROM answers_cache"),
@@ -124,9 +149,9 @@ def build(f: dict, out: Path) -> Path:
          "lead": f"{f['calls']:,} real contacts over {f['months']} months. Not a sample somebody "
                  f"had time to read.",
          "tech_title": "Corpus",
-         "tech": ["public regulator complaints, one bank",
-                  "constant 25% monthly sample, fixed seed",
-                  "plain files are the source of truth"]},
+         "tech": [f"{SOURCE_NAME}",
+                  f"one bank: {f['company']}",
+                  f"constant {f['fraction'] * 100:.1f}% monthly sample, fixed seed"]},
         {"n": "2", "title": "Read, one by one",
          "lead": "Why they called, what they talked about, how they felt, and the exact words that "
                  "show it.",
@@ -214,7 +239,7 @@ def build(f: dict, out: Path) -> Path:
         y = below_top + 58
         for bullet in st["tech"]:
             p.append(f'<circle cx="{x + 21}" cy="{y - 4}" r="2.4" fill="{FAINT}"/>')
-            block = wrapped(x + 32, y, bullet, width_chars=29, size=12, fill=MUTED, leading=17)
+            block = wrapped(x + 32, y, bullet, width_chars=31, size=12, fill=MUTED, leading=17)
             p.append(block)
             y += 17 * (len(block.split("<text")) - 1) + 12
 
@@ -240,6 +265,14 @@ def build(f: dict, out: Path) -> Path:
                   size=17, weight="700", fill=POSITIVE))
     p.append(text(W - MARGIN, 892, f"{f['answers']} demo questions answered offline  ·  "
                                    f"no synthetic records", size=12.5, fill=FAINT, anchor="end"))
+
+    # --- the dataset, named plainly; a bank audience asks this before anything else
+    p.append(line(MARGIN, 918, W - MARGIN, 918, stroke=RULE))
+    p.append(text(MARGIN, 944, "DATA", size=10.5, weight="700", fill=ACCENT, spacing="1.1"))
+    p.append(text(MARGIN + 52, 944,
+                  f"{SOURCE_NAME} ({SOURCE_OWNER})  ·  {f['company']}  ·  {f['window']}  ·  "
+                  f"{f['calls']:,} narratives sampled from {f['eligible']:,} eligible, "
+                  f"fixed seed  ·  {SOURCE_URL}", size=12, fill=MUTED))
 
     p.append("</svg>")
     out.parent.mkdir(parents=True, exist_ok=True)
