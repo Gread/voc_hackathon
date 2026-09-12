@@ -102,6 +102,50 @@ Files under `data/` are the source of truth; `data/voc.sqlite` is a derived inde
 in seconds. Every stage is resumable and caches each model call by content hash, so a re-run costs nothing
 and a partial run can be continued.
 
+## Extending the corpus
+
+Extending is cheap for one reason: every model call is keyed by a hash of its own content. The extraction
+key is the contact's text plus the prompt, schema and taxonomy versions, so adding data costs the new
+material and nothing else. Everything already read hits the cache.
+
+**More months.** Widen the window and run the chain. Months already pulled stay cached on disk, and
+contacts already read cost nothing to keep.
+
+```bash
+python -m voc ingest pull --start 2023-01 --end 2026-08
+python -m voc ingest sample --target 8000
+python -m voc extract && python -m voc theme run && python -m voc build-db
+```
+
+**More records from the same window.** Raise the target. Sampling is a constant fraction chosen by
+`sha256(seed:complaint_id)`, which makes the samples nested: raising the fraction only ever adds. Going
+from 25% to 40% over 20,000 eligible records adds about 3,000 and drops none, so nothing already read is
+re-read and no trend line shifts under you because the sample was reshuffled.
+
+**Another company.** `--company "EXACT CFPB NAME"` against a fresh data directory. This is the one that
+needs a decision rather than a command: build the theme registry per company, or a difference between
+banks will show up as a difference between problems.
+
+**More products.** `PRODUCTS` in `voc/ingest/cfpb.py` lists the nine pulled today; add to it and re-pull.
+
+**Real call transcripts instead of complaints.** Already supported, not future work:
+
+```bash
+python -m voc ingest transcripts --path ./calls --source contact_centre
+```
+
+The call record carries the turns, the turn count and the customer's character ranges, so evidence quotes
+can be restricted to what the customer actually said rather than the agent. `tests/test_transcripts.py`
+covers the path. This is also where the briefing's "stated reason versus underlying driver" should come
+alive: it splits in 55 of these 4,425 written complaints, and a phone corpus should show far more.
+
+Two things that cost real money or time, worth knowing before you start:
+
+- **Changing `taxonomy.json` re-reads the whole corpus.** Its version is part of every extraction cache
+  key, on purpose, so no old reading can survive under a new definition.
+- **Theming is not incremental.** New statements recompose the batches, so step 2 runs again. Step 1, the
+  expensive one, does not.
+
 ## Working without an API key
 
 Every LLM stage can be done by build-time Claude agents instead of the API, writing the same cache files:
