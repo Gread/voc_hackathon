@@ -160,7 +160,7 @@ def create_app(data_dir: Path | None = None) -> FastAPI:
             "questions": load_questions(),
             "sources": sources,
             "as_of_weeks": weeks,
-            "live_model": settings.ask_model if settings.can_call_api else None,
+            "live_model": settings.live_ask_model if settings.can_call_api else None,
             "warning": state["error"],
         }, con)
 

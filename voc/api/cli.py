@@ -31,7 +31,7 @@ def describe_mode() -> str:
     if llm_mode == "fake":
         return f"FAKE DATA ({n_calls} calls) - heuristic extractions, not model output"
     if settings.can_call_api:
-        return f"live · {settings.ask_model} · {n_calls} calls · data {version}"
+        return f"live · {settings.live_ask_model} · {n_calls} calls · data {version}"
     return f"recorded answers · {n_calls} calls · data {version} (no API key: new questions get a templated answer)"
 
 
