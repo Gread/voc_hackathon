@@ -54,6 +54,32 @@ def _month_name(iso: str) -> str:
     return f"{['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'][int(m) - 1]} {y}"
 
 
+def most_dissimilar(wordings: list[str], k: int = 3) -> list[str]:
+    """Pick k wordings of one theme that share the fewest words with each other.
+
+    The point of the slide is that no keyword rule would group these, so choosing them by hand
+    (or by a phrase that stops existing after a re-run) undercuts it. This picks greedily.
+    """
+    def bag(s: str) -> set[str]:
+        return {w for w in "".join(c.lower() if c.isalnum() else " " for c in s).split() if len(w) > 3}
+
+    pool = [(w, bag(w)) for w in wordings if 60 <= len(w) <= 190]
+    if len(pool) < k:
+        return [w for w, _ in pool][:k]
+    best, chosen = None, []
+    for start in range(min(12, len(pool))):
+        picked = [pool[start]]
+        for _ in range(k - 1):
+            nxt = min((p for p in pool if p not in picked),
+                      key=lambda p: max(len(p[1] & q[1]) / max(1, len(p[1] | q[1])) for q in picked))
+            picked.append(nxt)
+        score = max(len(a[1] & b[1]) / max(1, len(a[1] | b[1]))
+                    for i, a in enumerate(picked) for b in picked[i + 1:])
+        if best is None or score < best:
+            best, chosen = score, [w for w, _ in picked]
+    return chosen
+
+
 def facts() -> dict:
     meta = json.loads((ROOT / "data/meta.json").read_text(encoding="utf-8"))
     con = sqlite3.connect(ROOT / "data/voc.sqlite")
@@ -63,8 +89,11 @@ def facts() -> dict:
 
     head = con.execute(
         "SELECT name, n_calls, n_wordings FROM themes WHERE status='active' ORDER BY n_calls DESC LIMIT 1"
-    ).fetchone()
-    lo, hi = con.execute("SELECT MIN(date), MAX(date) FROM calls").fetchone()
+    ).fetchone()   # the largest theme, never a hardcoded id: re-theming renumbers everything
+    lo, hi = con.execute("SELECT MIN(date), MAX(date) FROM calls WHERE source='cfpb'").fetchone()
+    corpora = [dict(zip(("source", "n", "lo", "hi"), r)) for r in con.execute(
+        "SELECT source, COUNT(*), MIN(date), MAX(date) FROM calls GROUP BY source ORDER BY COUNT(*) DESC")]
+    n_synthetic = sum(c["n"] for c in corpora if c["source"] != "cfpb")
     profile = json.loads((ROOT / "data/profile.json").read_text(encoding="utf-8"))
     from voc.agent.tools import READ_TOOLS
     return {
@@ -76,10 +105,13 @@ def facts() -> dict:
         "company": display_company(meta["company"]),
         "window": f"{_month_name(lo)} to {_month_name(hi)}",
         "eligible": profile["n_eligible"],
+        "corpora": corpora, "n_synthetic": n_synthetic,
+        "n_real": next((c["n"] for c in corpora if c["source"] == "cfpb"), 0),
         "fraction": profile["sampling_fraction"],
         "head_name": head[0], "head_calls": head[1], "head_wordings": head[2],
         "n_tools": len(READ_TOOLS),
-        "answers": one("SELECT COUNT(*) FROM answers_cache"),
+        "answers": one("SELECT COUNT(*) FROM answers_cache WHERE data_version = "
+                       "(SELECT value FROM meta WHERE key='data_version')"),
     }
 
 
@@ -146,12 +178,12 @@ def build(f: dict, out: Path) -> Path:
 
     stages = [
         {"n": "1", "title": "Every contact",
-         "lead": f"{f['calls']:,} real contacts over {f['months']} months. Not a sample somebody "
-                 f"had time to read.",
-         "tech_title": "Corpus",
-         "tech": [f"{SOURCE_NAME}",
-                  f"one bank: {f['company']}",
-                  f"constant {f['fraction'] * 100:.1f}% monthly sample, fixed seed"]},
+         "lead": f"{f['n_real']:,} real complaints over {f['months']} months, plus "
+                 f"{f['n_synthetic']:,} call transcripts. Not a sample somebody had time to read.",
+         "tech_title": "Corpora",
+         "tech": [f"{SOURCE_NAME} (real)",
+                  f"{f['n_synthetic']:,} synthetic conversations, labelled",
+                  "pick either or both in the interface"]},
         {"n": "2", "title": "Read, one by one",
          "lead": "Why they called, what they talked about, how they felt, and the exact words that "
                  "show it.",
@@ -264,15 +296,16 @@ def build(f: dict, out: Path) -> Path:
     p.append(text(MARGIN, 892, "Every number on the screen is a link to the real calls behind it.",
                   size=17, weight="700", fill=POSITIVE))
     p.append(text(W - MARGIN, 892, f"{f['answers']} demo questions answered offline  ·  "
-                                   f"no synthetic records", size=12.5, fill=FAINT, anchor="end"))
+                                   f"each corpus labelled by kind", size=12.5, fill=FAINT, anchor="end"))
 
     # --- the dataset, named plainly; a bank audience asks this before anything else
     p.append(line(MARGIN, 918, W - MARGIN, 918, stroke=RULE))
     p.append(text(MARGIN, 944, "DATA", size=10.5, weight="700", fill=ACCENT, spacing="1.1"))
     p.append(text(MARGIN + 52, 944,
-                  f"{SOURCE_NAME} ({SOURCE_OWNER})  ·  {f['company']}  ·  {f['window']}  ·  "
-                  f"{f['calls']:,} narratives sampled from {f['eligible']:,} eligible, "
-                  f"fixed seed  ·  {SOURCE_URL}", size=12, fill=MUTED))
+                  f"{f['n_real']:,} real complaints: {SOURCE_NAME} ({SOURCE_OWNER}), {f['company']}, "
+                  f"{f['window']}, sampled from {f['eligible']:,} eligible  ·  "
+                  f"{f['n_synthetic']:,} synthetic conversations: talkmap/banking-conversation-corpus "
+                  f"on Hugging Face, MIT, labelled synthetic throughout", size=11.5, fill=MUTED))
 
     p.append("</svg>")
     out.parent.mkdir(parents=True, exist_ok=True)

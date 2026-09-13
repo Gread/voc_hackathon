@@ -30,6 +30,41 @@ BODY_W = W - 2 * MARGIN
 
 # --- numbers, read from the index rather than typed ------------------------------------------
 
+def week_before(week: str, n: int) -> str:
+    """n ISO weeks earlier, so a replay can start before the signal fires."""
+    from datetime import date, timedelta
+    y, w = week.split("-W")
+    day = date.fromisocalendar(int(y), int(w), 1) - timedelta(weeks=n)
+    iso = day.isocalendar()
+    return f"{iso[0]}-W{iso[1]:02d}"
+
+
+def most_dissimilar(wordings: list[str], k: int = 3) -> list[str]:
+    """Pick k wordings of one theme that share the fewest words with each other.
+
+    The point of the slide is that no keyword rule would group these, so choosing them by hand
+    (or by a phrase that stops existing after a re-run) undercuts it. This picks greedily.
+    """
+    def bag(s: str) -> set[str]:
+        return {w for w in "".join(c.lower() if c.isalnum() else " " for c in s).split() if len(w) > 3}
+
+    pool = [(w, bag(w)) for w in wordings if 60 <= len(w) <= 190]
+    if len(pool) < k:
+        return [w for w, _ in pool][:k]
+    best, chosen = None, []
+    for start in range(min(12, len(pool))):
+        picked = [pool[start]]
+        for _ in range(k - 1):
+            nxt = min((p for p in pool if p not in picked),
+                      key=lambda p: max(len(p[1] & q[1]) / max(1, len(p[1] | q[1])) for q in picked))
+            picked.append(nxt)
+        score = max(len(a[1] & b[1]) / max(1, len(a[1] | b[1]))
+                    for i, a in enumerate(picked) for b in picked[i + 1:])
+        if best is None or score < best:
+            best, chosen = score, [w for w, _ in picked]
+    return chosen
+
+
 def facts() -> dict:
     meta = json.loads((ROOT / "data/meta.json").read_text(encoding="utf-8"))
     con = sqlite3.connect(ROOT / "data/voc.sqlite")
@@ -43,17 +78,22 @@ def facts() -> dict:
         "ORDER BY n_calls DESC LIMIT 5")]
     tenth = con.execute("SELECT n_calls, n_wordings FROM themes WHERE status='active' "
                         "ORDER BY n_calls DESC LIMIT 1 OFFSET 9").fetchone()
+    head_id = one("SELECT theme_id FROM themes WHERE status='active' ORDER BY n_calls DESC LIMIT 1")
     wordings = [r["issue_statement"] for r in con.execute(
-        "SELECT issue_statement FROM theme_wordings WHERE theme_id=? ORDER BY rank", ["thm_denied_or_declined_without_explanation__negative_004"])]
-    # Three real wordings of the same theme, chosen because they share almost no vocabulary.
-    # Keyed on a distinctive phrase so the slide is reproducible and reviewable.
-    keys = ["drive-thru cameras", "mistaken lost-card date", "document upload process"]
-    picks = [next((w for w in wordings if k in w), "") for k in keys]
+        "SELECT issue_statement FROM theme_wordings WHERE theme_id=? ORDER BY rank", [head_id])]
+    picks = most_dissimilar(wordings, 3)
+    # The theme that spends the most weeks flagged is the one whose replay actually shows something.
+    replay_id = one("""SELECT e.entity_id FROM emerging_scores e JOIN themes t ON t.theme_id = e.entity_id
+                       WHERE e.entity_type='theme' AND t.status='active'
+                         AND e.status IN ('emerging','growing','new')
+                       GROUP BY e.entity_id ORDER BY COUNT(*) DESC, MAX(e.z) DESC LIMIT 1""")
+    first_hit = one("""SELECT MIN(as_of_week) FROM emerging_scores WHERE entity_type='theme'
+                       AND entity_id=? AND status IN ('emerging','growing','new')""", [replay_id])
     replay = [dict(r) for r in con.execute(
         "SELECT as_of_week, n_recent, expected_recent, z, status FROM emerging_scores "
-        "WHERE entity_type='theme' AND entity_id=? AND as_of_week BETWEEN '2025-W38' AND '2025-W45' "
-        "ORDER BY as_of_week", ["thm_no_response_or_follow_up__negative_004"])]
-    replay_name = one("SELECT name FROM themes WHERE theme_id=?", ["thm_no_response_or_follow_up__negative_004"])
+        "WHERE entity_type='theme' AND entity_id=? AND as_of_week >= ? ORDER BY as_of_week LIMIT 8",
+        [replay_id, week_before(first_hit, 2)])]
+    replay_name = one("SELECT name FROM themes WHERE theme_id=?", [replay_id])
 
     claims = quotes = flagged = 0
     for f in sorted((ROOT / "data/answers").glob("*.json")):
@@ -65,7 +105,6 @@ def facts() -> dict:
     import json as _json
     differs = sum(1 for line in (ROOT / "data/extractions.jsonl").open(encoding="utf-8")
                   if (r := _json.loads(line)).get("status") == "ok" and r["extraction"].get("reason_differs"))
-    head_id = "thm_denied_or_declined_without_explanation__negative_004"
     head = dict(con.execute("SELECT name, n_calls, n_wordings, n_products FROM themes WHERE theme_id=?",
                             [head_id]).fetchone())
     head["states"] = one("SELECT COUNT(DISTINCT c.region) FROM v_theme_calls tc JOIN calls c "
@@ -75,8 +114,11 @@ def facts() -> dict:
         return sum(sum(1 for _ in p.open(encoding="utf-8", errors="replace"))
                    for g in globs for p in ROOT.glob(g))
 
+    corpora = {r[0]: r[1] for r in con.execute("SELECT source, COUNT(*) FROM calls GROUP BY source")}
     return {
         "differs": differs, "head": head,
+        "n_real": corpora.get("cfpb", 0),
+        "n_synthetic": sum(v for k, v in corpora.items() if k != "cfpb"),
         "py_lines": lines("voc/**/*.py"), "js_lines": lines("voc/web/js/*.js"),
         "test_lines": lines("tests/**/*.py"), "tenth": dict(tenth), "picks": picks,
         "calls": meta["n_calls"], "topics": meta["n_topics"], "members": meta["n_members"],
@@ -311,19 +353,23 @@ def build(f: dict, out: Path) -> Path:
 
     # 4. The data
     s = blank(prs)
-    heading(s, "The data", "Real complaints, not a synthetic corpus")
+    heading(s, "The data", "Two corpora, kept apart on purpose")
     bullets(s, [
-        ("Source.", "Consumer complaint narratives about one large US bank, pulled live from the US regulator's "
-         "public database. Every record was written by a real person who consented to publication."),
-        ("Sampling.", f"A constant 25.25% of that bank's eligible narratives per month, fixed seed, hash-based. "
-         f"Month-to-month movement is the real shape of the intake, not an artefact of sampling."),
-        ("Size chosen by a gate, not a guess.", "At least 30 sampled contacts in 90% of weeks, two products and "
-         "two segments with real volume, every month present. 4,000 failed the weekly gate. 4,425 passes."),
-    ], top=Inches(2.25))
-    stat_row(s, [(f"{f['calls']:,}", "contacts read"), ("24", "months"), ("1", "bank"),
-                 ("25.25%", "constant sample"), ("0", "synthetic records")], top=Inches(5.05), height=Inches(1.3))
+        ("Written complaints, real.", f"{f['n_real']:,} consumer complaint narratives about one large US bank, "
+         f"pulled live from the US regulator's public database. A constant 25.25% monthly sample on a fixed "
+         f"seed, so month-to-month movement is the real shape of the intake."),
+        ("Call transcripts, synthetic.", f"{f['n_synthetic']:,} agent and customer phone conversations from a "
+         f"published Hugging Face dataset, MIT licensed, whose own card says it is synthetically generated. "
+         f"Labelled SYNTHETIC wherever it appears, and switchable on or off at the top of the screen."),
+        ("Why both.", "A contact centre has conversations, not letters. The second corpus is what proves the "
+         "transcript path: speaker turns, quotes restricted to what the customer said, and the reason given "
+         "versus the reason underneath."),
+    ], top=Inches(2.25), size=15.5)
+    stat_row(s, [(f"{f['n_real']:,}", "real complaints"), (f"{f['n_synthetic']:,}", "synthetic conversations"),
+                 ("1", "bank"), ("25.25%", "constant sample"),
+                 ("0", "records we fabricated")], top=Inches(5.35), height=Inches(1.2))
     footer(s, "Honest caveat, stated in the product: complaint dates are when the regulator received them, "
-              "which lags the contact by days to weeks.")
+              "and the conversation corpus covers a single month, so it carries no trend baseline.")
 
     # 5. Step 1
     s = blank(prs)
@@ -404,8 +450,10 @@ def build(f: dict, out: Path) -> Path:
     table(s, ["As-of week", "Recent 4 weeks", "Expected", "z", "Verdict"], rows, top=Inches(2.85),
           widths=[Inches(2.1), Inches(2.2), Inches(1.7), Inches(1.4), Inches(4.2)], highlight=hot)
     frame = textbox(s, MARGIN, H - Inches(1.5), BODY_W, Inches(0.9))
-    para(frame, "Quiet, quiet, then six contacts against two expected, and it fires.", size=17, bold=True,
-         color=ACCENT, space_after=6, first=True)
+    fired = next((r for r in f["replay"] if r["status"] in ("emerging", "growing", "new")), None)
+    para(frame, (f"Quiet, quiet, then {fired['n_recent']} contacts against {fired['expected_recent']:.1f} "
+                 f"expected, and it fires." if fired else "The detector stays quiet until the shape changes."),
+         size=17, bold=True, color=ACCENT, space_after=6, first=True)
     para(frame, "Four recent weeks against the sixteen before, Poisson z with a Jeffreys pseudo-count, minimum "
                 "support of five contacts in at least two weeks. Scores are precomputed for every as-of week, so "
                 "the dashboard slider replays what the system would have told you that Monday. Nothing is planted.",
