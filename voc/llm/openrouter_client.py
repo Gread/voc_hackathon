@@ -21,6 +21,10 @@ from voc.llm.client import LLMError, LLMRefusal, LLMRequest, LLMResult, Usage
 BASE_URL = "https://openrouter.ai/api/v1/chat/completions"
 TIMEOUT_S = 180.0
 MAX_RETRIES = 5
+EMPTY_RETRIES = 3   # an empty turn is usually transient, not a refusal
+# When a model keeps returning nothing for a batch, try a stronger one rather than losing the
+# batch: one flaky response used to abort a 200-request theming run.
+FALLBACK_MODEL = {"google/gemini-2.5-flash": "google/gemini-3.1-pro-preview"}
 RETRY_STATUSES = {408, 409, 429, 500, 502, 503, 504}
 TOOL_NAME = "emit"
 EFFORT_LEVELS = {"low": "low", "medium": "medium", "high": "high", "max": "high"}
@@ -105,6 +109,7 @@ class OpenRouterClient:
         self.base_url = base_url
         self._client = client
         self._aclient = aclient
+        self._aloop: Any = None
 
     @property
     def headers(self) -> dict[str, str]:
@@ -119,14 +124,26 @@ class OpenRouterClient:
 
     @property
     def aclient(self) -> httpx.AsyncClient:
-        if self._aclient is None:
+        """One client per event loop.
+
+        The theming passes call `asyncio.run` once per batch group, so each group gets a fresh loop
+        and closes it afterwards. A client cached across that boundary is bound to a loop that no
+        longer exists, and the next group dies with "Event loop is closed".
+        """
+        try:
+            loop = asyncio.get_running_loop()
+        except RuntimeError:
+            loop = None
+        if self._aclient is None or self._aloop is not loop:
             self._aclient = httpx.AsyncClient(timeout=TIMEOUT_S,
                                               limits=httpx.Limits(max_connections=32))
+            self._aloop = loop
         return self._aclient
 
     def complete_json(self, req: LLMRequest) -> LLMResult:
         model = req.model if "/" in req.model else _model_for(req)
         body = build_body(req, model)
+        last: LLMRefusal | None = None
         for attempt in range(MAX_RETRIES + 1):
             response = self.client.post(self.base_url, headers=self.headers, json=body)
             if response.status_code in RETRY_STATUSES and attempt < MAX_RETRIES:
@@ -134,12 +151,26 @@ class OpenRouterClient:
                 continue
             if response.status_code != 200:
                 raise LLMError(f"OpenRouter HTTP {response.status_code}: {response.text[:300]}")
-            return parse(response.json(), req, model)
-        raise LLMError("unreachable")
+            try:
+                return parse(response.json(), req, model)
+            except LLMRefusal as exc:
+                # An empty turn is usually transient rather than a real refusal; give it another go.
+                last = exc
+                if attempt >= EMPTY_RETRIES:
+                    break
+                time.sleep(_delay(attempt))
+        stronger = FALLBACK_MODEL.get(model)
+        if stronger:
+            response = self.client.post(self.base_url, headers=self.headers,
+                                        json=build_body(req, stronger))
+            if response.status_code == 200:
+                return parse(response.json(), req, stronger)
+        raise last or LLMError("unreachable")
 
     async def acomplete_json(self, req: LLMRequest) -> LLMResult:
         model = req.model if "/" in req.model else _model_for(req)
         body = build_body(req, model)
+        last: LLMRefusal | None = None
         for attempt in range(MAX_RETRIES + 1):
             response = await self.aclient.post(self.base_url, headers=self.headers, json=body)
             if response.status_code in RETRY_STATUSES and attempt < MAX_RETRIES:
@@ -147,5 +178,17 @@ class OpenRouterClient:
                 continue
             if response.status_code != 200:
                 raise LLMError(f"OpenRouter HTTP {response.status_code}: {response.text[:300]}")
-            return parse(response.json(), req, model)
-        raise LLMError("unreachable")
+            try:
+                return parse(response.json(), req, model)
+            except LLMRefusal as exc:
+                last = exc
+                if attempt >= EMPTY_RETRIES:
+                    break
+                await asyncio.sleep(_delay(attempt))
+        stronger = FALLBACK_MODEL.get(model)
+        if stronger:
+            response = await self.aclient.post(self.base_url, headers=self.headers,
+                                               json=build_body(req, stronger))
+            if response.status_code == 200:
+                return parse(response.json(), req, stronger)
+        raise last or LLMError("unreachable")

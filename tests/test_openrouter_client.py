@@ -73,3 +73,22 @@ def test_usage_is_read_back_so_cost_reporting_is_not_zero():
     assert (out.usage.input_tokens, out.usage.output_tokens) == (120, 34)
     assert out.usage.cache_read_input_tokens == 20
     assert out.produced_by == "api"
+
+
+def test_the_async_client_is_not_reused_across_event_loops():
+    """The theming passes call asyncio.run once per batch group. A client cached across that
+    boundary belongs to a closed loop, and the next group dies with "Event loop is closed"."""
+    import asyncio
+
+    from voc.llm.openrouter_client import OpenRouterClient
+
+    api = OpenRouterClient(api_key="k")
+    first = asyncio.run(_grab(api))
+    second = asyncio.run(_grab(api))
+    assert first is not second, "each event loop needs its own client"
+
+
+async def _grab(api):
+    client = api.aclient
+    await client.aclose()
+    return client

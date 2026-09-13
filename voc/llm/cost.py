@@ -8,6 +8,9 @@ PRICES_PER_M = {
     "claude-sonnet-5": (2.0, 10.0),
     "claude-haiku-4-5": (1.0, 5.0),
     "claude-fable-5-1": (10.0, 50.0),
+    # OpenRouter-served models, list prices per million tokens
+    "google/gemini-2.5-flash": (0.30, 2.50),
+    "google/gemini-3.1-pro-preview": (1.25, 10.0),
 }
 CACHE_READ_MULT = 0.1
 CACHE_WRITE_MULT = 1.25

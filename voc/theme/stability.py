@@ -5,7 +5,7 @@ import random
 from typing import Any
 
 from voc.config import get_settings
-from voc.llm.client import LLMCacheMiss, LLMClient
+from voc.llm.client import LLMCacheMiss, LLMClient, LLMRefusal
 from voc.paths import Paths
 from voc.theme.buckets import batch_id, group_buckets, llm_buckets, load_rows, make_batches
 from voc.theme.reassign import assign_rows, build_reassign_request, parse_assignments
@@ -31,10 +31,12 @@ def _resample_bucket(bucket: str, rows: list[dict[str, Any]], registry: Registry
     view = prompt_view(offered)
     batches = make_batches(rows, opts.batch_size)
     reqs = [build_reassign_request(bucket, i, b, view, name_prefix="stability/") for i, b in enumerate(batches)]
-    results = gather_requests(client, reqs, opts.concurrency)
+    results = gather_requests(client, reqs, opts.concurrency, tolerate=LLMRefusal)
     offered_ids = {t["theme_id"] for t in offered}
     out = []
     for i, (batch, res) in enumerate(zip(batches, results)):
+        if isinstance(res, BaseException):
+            continue        # a refused batch is simply not part of the agreement sample
         stats.record(res)
         out.extend(assign_rows(batch, parse_assignments(res.data), offered_ids, catch_all, batch_id(bucket, i), "stability"))
     return out

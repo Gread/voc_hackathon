@@ -198,8 +198,12 @@ def dry_run(records: list[CallRecord]) -> dict[str, Any]:
 
 
 def _token_counter(settings: Settings):
-    """messages.count_tokens when a key exists, else the 4-chars-per-token estimate."""
-    if settings.can_call_api:
+    """messages.count_tokens when Anthropic can be asked, else the 4-chars-per-token estimate.
+
+    OpenRouter exposes no token-counting endpoint, so that provider falls back to the estimate
+    rather than reaching for a client it has no key for.
+    """
+    if settings.can_call_api and settings.provider != "openrouter":
         from voc.llm.anthropic_client import AnthropicClient
         api = AnthropicClient()
 

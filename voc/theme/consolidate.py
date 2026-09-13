@@ -4,6 +4,7 @@ from __future__ import annotations
 from typing import Any
 
 from voc.llm.client import LLMClient, LLMRequest, LLMResult
+from voc.llm.client import LLMRefusal
 from voc.paths import Paths
 from voc.schemas.theme import (CONSOLIDATE_API_SCHEMA, RENAME_API_SCHEMA, THEME_PROMPT_VERSION, ConsolidateOutput,
                                RenameOutput)
@@ -140,9 +141,12 @@ def consolidate_scope(registry: Registry, members: list[dict[str, Any]], rows_by
     batches = [pairs[i:i + PAIR_BATCH] for i in range(0, len(pairs), PAIR_BATCH)]
     reqs = [build_consolidate_request([_pair_view(a, b, registry, samples) for a, b in batch], i, scope, view_hash)
             for i, batch in enumerate(batches)]
-    results = gather_requests(client, reqs, opts.concurrency)
+    results = gather_requests(client, reqs, opts.concurrency, tolerate=LLMRefusal)
     merges, log = [], []
     for batch, res in zip(batches, results):
+        if isinstance(res, BaseException):
+            print(f"  consolidate batch refused, its {len(batch)} pair(s) stay separate")
+            continue
         stats.record(res)
         try:
             decisions = ConsolidateOutput.model_validate(res.data).model_dump()["decisions"]
@@ -172,9 +176,12 @@ def rename_pass(registry: Registry, members: list[dict[str, Any]], rows_by_id: d
             + "; ".join(f'"{s}"' for s in v["samples"]) for v in view) + "\n\nReturn every theme with its final name and definitions."
         reqs.append(make_request("theme_rename", f"rename/{i:03d}_{registry_hash(view)}", content_hash(THEME_PROMPT_VERSION, view),
                                  "rename", user, RENAME_API_SCHEMA, {"batch_idx": i, "registry": view}))
-    results = gather_requests(client, reqs, opts.concurrency)
+    results = gather_requests(client, reqs, opts.concurrency, tolerate=LLMRefusal)
     registry.codebook_version += 1
     for batch, res in zip(batches, results):
+        if isinstance(res, BaseException):
+            print(f"  rename batch refused, {len(batch)} theme(s) keep their current names")
+            continue
         stats.record(res)
         allowed = {t["theme_id"] for t in batch}
         try:

@@ -32,12 +32,15 @@ function setupSources(sources) {
   const boxes = document.getElementById("sourceBoxes");
   if (!sources || sources.length < 2) return;   // one corpus needs no picker
   wrap.hidden = false;
-  const chosen = () => state.filters.source || [];
+  const all = sources.map((s) => s.source);
+  // No filter means every corpus is included, so every box shows ticked. Ticked reads as
+  // "included", which is the only mental model that survives ticking the second box.
+  const shown = () => (state.filters.source?.length ? state.filters.source : all);
 
   const render = () => {
     clear(boxes);
     for (const src of sources) {
-      const on = chosen().includes(src.source);
+      const on = shown().includes(src.source);
       const input = el("input", { type: "checkbox" });
       input.checked = on;
       const label = el("label", {
@@ -51,10 +54,11 @@ function setupSources(sources) {
       ]);
       input.addEventListener("change", () => {
         const next = input.checked
-          ? [...chosen(), src.source]
-          : chosen().filter((v) => v !== src.source);
-        // Every box ticked is the same scope as none ticked; keep the URL clean.
-        setFilter("source", next.length === sources.length ? [] : next);
+          ? [...shown(), src.source]
+          : shown().filter((v) => v !== src.source);
+        // Untick the last one and you would be asking for nothing; that means everything instead.
+        // Every box ticked is also everything, so both clear the filter and keep the URL short.
+        setFilter("source", next.length === 0 || next.length === sources.length ? [] : next);
         render();
       });
       boxes.appendChild(label);
@@ -172,8 +176,8 @@ async function boot() {
   initDashboard();
   document.getElementById("clearFilters").addEventListener("click", () => {
     clearFilters();
-    for (const box of document.querySelectorAll("#sourceBoxes input")) box.checked = false;
-    for (const box of document.querySelectorAll("#sourceBoxes .source-box")) box.classList.remove("on");
+    for (const box of document.querySelectorAll("#sourceBoxes input")) box.checked = true;
+    for (const box of document.querySelectorAll("#sourceBoxes .source-box")) box.classList.add("on");
     for (const id of ["fProduct", "fSegment", "fRegionGroup"]) {
       for (const o of document.getElementById(id).options) o.selected = false;
     }

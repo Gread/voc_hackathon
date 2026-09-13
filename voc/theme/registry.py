@@ -277,11 +277,17 @@ class ThemeOptions:
     on_miss: str = "raise"       # raise | skip (skip: a cache miss leaves the bucket pending)
 
 
+# A 100-row batch answers with ~3k tokens of JSON, and models whose reasoning cannot be disabled
+# spend part of the completion budget before writing any of it. At 8192 a third of the batches came
+# back truncated, and the statements they dropped silently became unassigned.
+THEME_MAX_TOKENS = 32000
+
+
 def make_request(stage: str, cache_name: str, cache_key: str, prompt_name: str, user: str,
                  schema: dict[str, Any], meta: dict[str, Any], effort: str | None = None) -> LLMRequest:
     settings = get_settings()
     return LLMRequest(stage=stage, model=settings.theme_model, system=load_prompt(prompt_name), user=user,
-                      schema=schema, effort=effort or settings.theme_effort, max_tokens=8192,
+                      schema=schema, effort=effort or settings.theme_effort, max_tokens=THEME_MAX_TOKENS,
                       cache_name=cache_name, cache_key=cache_key, meta=meta)
 
 
@@ -295,12 +301,17 @@ async def _gather(client: LLMClient, reqs: list[LLMRequest], concurrency: int) -
     return list(await asyncio.gather(*(one(r) for r in reqs), return_exceptions=True))
 
 
-def gather_requests(client: LLMClient, reqs: list[LLMRequest], concurrency: int) -> list[LLMResult]:
-    """Run requests concurrently; cache misses win over other errors so the caller can report pending work."""
+def gather_requests(client: LLMClient, reqs: list[LLMRequest], concurrency: int,
+                    tolerate: type[BaseException] | tuple[type[BaseException], ...] = ()) -> list[Any]:
+    """Run requests concurrently; cache misses win over other errors so the caller can report pending work.
+
+    Exceptions listed in `tolerate` are handed back in place of their result, so the caller can decide
+    what to do with that one batch instead of losing the whole run.
+    """
     if not reqs:
         return []
     results = asyncio.run(_gather(client, reqs, concurrency))
-    errors = [r for r in results if isinstance(r, BaseException)]
+    errors = [r for r in results if isinstance(r, BaseException) and not isinstance(r, tolerate or ())]
     if errors:
         misses = [e for e in errors if isinstance(e, LLMCacheMiss)]
         raise (misses[0] if misses else errors[0])

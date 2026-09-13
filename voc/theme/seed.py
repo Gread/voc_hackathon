@@ -4,7 +4,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any
 
-from voc.llm.client import LLMCacheMiss, LLMClient, LLMRequest
+from voc.llm.client import LLMCacheMiss, LLMClient, LLMRefusal, LLMRequest
 from voc.paths import Paths
 from voc.schemas.theme import SEED_API_SCHEMA, THEME_PROMPT_VERSION, SeedOutput
 from voc.theme.buckets import batch_id, bucket_slug, group_buckets, llm_buckets, load_rows, make_batches
@@ -95,7 +95,14 @@ def seed_bucket(bucket: str, rows: list[dict[str, Any]], state: SeedState, clien
     batches = make_batches(rows, opts.batch_size)
     for i, batch in enumerate(batches[:opts.sequential]):
         offered = registry.active(bucket)
-        res = client.complete_json(build_seed_request(bucket, i, batch, prompt_view(offered)))
+        try:
+            res = client.complete_json(build_seed_request(bucket, i, batch, prompt_view(offered)))
+        except LLMRefusal as exc:
+            # Some batches the provider simply will not answer, fraud narratives especially. Losing
+            # 100 statements to the catch-all beats losing a run of 150 requests.
+            state.members.extend(fallback_rows(batch, registry.ensure_catch_all(bucket), batch_id(bucket, i)))
+            print(f"seed {bucket} batch {i}: refused, rows go to the catch-all ({exc})")
+            continue
         stats.record(res)
         out = parse_seed(res.data)
         tmp_map = accept_new_themes(bucket, out, registry, opts.cap, None)
@@ -107,9 +114,14 @@ def seed_bucket(bucket: str, rows: list[dict[str, Any]], state: SeedState, clien
     offered = registry.active(bucket)              # frozen snapshot for the concurrent tail
     view = prompt_view(offered)
     reqs = [build_seed_request(bucket, opts.sequential + j, b, view) for j, b in enumerate(rest)]
-    results = gather_requests(client, reqs, opts.concurrency)
+    results = gather_requests(client, reqs, opts.concurrency, tolerate=LLMRefusal)
     accepted: list[tuple[str, str]] = []
     for j, (batch, res) in enumerate(zip(rest, results)):
+        if isinstance(res, BaseException):
+            state.members.extend(fallback_rows(batch, registry.ensure_catch_all(bucket),
+                                               batch_id(bucket, opts.sequential + j)))
+            print(f"seed {bucket} batch {opts.sequential + j}: refused, rows go to the catch-all")
+            continue
         stats.record(res)
         out = parse_seed(res.data)
         tmp_map = accept_new_themes(bucket, out, registry, opts.cap, accepted)

@@ -4,6 +4,7 @@ from __future__ import annotations
 from typing import Any
 
 from voc.llm.client import LLMClient, LLMRequest
+from voc.llm.client import LLMRefusal
 from voc.paths import Paths
 from voc.schemas.theme import REASSIGN_API_SCHEMA, THEME_PROMPT_VERSION, ReassignOutput
 from voc.theme.buckets import batch_id, group_buckets, llm_buckets, load_rows, make_batches
@@ -61,10 +62,15 @@ def reassign_bucket(bucket: str, rows: list[dict[str, Any]], registry: Registry,
     if not offered:
         return [m for i, b in enumerate(batches) for m in fallback_rows(b, catch_all, batch_id(bucket, i))]
     reqs = [build_reassign_request(bucket, i, b, view) for i, b in enumerate(batches)]
-    results = gather_requests(client, reqs, opts.concurrency)
+    results = gather_requests(client, reqs, opts.concurrency, tolerate=LLMRefusal)
     offered_ids = {t["theme_id"] for t in offered}
     members: list[dict[str, Any]] = []
     for i, (batch, res) in enumerate(zip(batches, results)):
+        if isinstance(res, BaseException):
+            # A batch the provider will not answer becomes unassigned rows, not a lost run.
+            members.extend(fallback_rows(batch, catch_all, batch_id(bucket, i)))
+            print(f"reassign {bucket} batch {i}: refused, rows go to the catch-all")
+            continue
         stats.record(res)
         members.extend(assign_rows(batch, parse_assignments(res.data), offered_ids, catch_all, batch_id(bucket, i)))
     return members

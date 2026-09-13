@@ -27,20 +27,46 @@ code either way, so a different model can pick different tools but cannot make a
 
 ## The data
 
-Real, public consumer complaint narratives about one large US bank, pulled from the
-[CFPB Consumer Complaint Database](https://www.consumerfinance.gov/data-research/consumer-complaints/).
+Two corpora, kept apart on purpose. A checkbox at the top of the dashboard picks one, the other, or
+both, and every count follows the choice.
+
+**Written complaints (real).** Public consumer complaint narratives about one large US bank, pulled
+from the [CFPB Consumer Complaint Database](https://www.consumerfinance.gov/data-research/consumer-complaints/).
 
 | | |
 |---|---|
-| Corpus | 4,425 narratives, 24 months (July 2024 to June 2026) |
+| Corpus | 4,425 narratives, 24 months (July 2024 to June 2026); 1,000 synthetic conversations alongside |
 | Sampling | constant 25.25% of that bank's eligible narratives per month, fixed seed, hash-based |
 | Eligible population | 17,822 of 18,641 pulled (narratives of at least 30 words, deduplicated) |
 | Metadata | product, sub-product, issue, state, region group, submission channel, segment tags, dates |
 | Redactions | `XXXX` and `XX/XX/XXXX` are the regulator's and are kept verbatim in every quote |
 
-Every record is a real complaint written by a real person who consented to publication. Nothing in `data/`
-is synthetic; the only planted patterns live in `tests/fixtures`, where the analytics are checked against
-known answers. Three honest caveats, two of which the UI states out loud:
+Every record is a real complaint written by a real person who consented to publication.
+
+**Call transcripts (synthetic).** 1,000 agent/customer phone conversations from
+[talkmap/banking-conversation-corpus](https://huggingface.co/datasets/talkmap/banking-conversation-corpus)
+on Hugging Face, MIT licensed. The dataset card says plainly that these are synthetically generated,
+and the interface labels them SYNTHETIC everywhere they appear. They are here because a contact
+centre has conversations, not letters, and this is the only way to show the transcript path working
+end to end: speaker turns, quotes restricted to what the customer said, and the reason they gave
+versus the reason underneath.
+
+They also settle a question the complaint corpus could not. The briefing expects the stated reason to
+differ from the real driver; it does so in 1 contact in 80 of the written complaints and 1 in 23 of
+the conversations, 3.6 times more often, which is what you would expect when someone opens with what
+they want rather than with their grievance.
+
+Two things follow from the corpora being different in kind, and the product says both out loud:
+
+- The conversations cover one month, so they have no trend baseline. Growth findings come from the
+  complaints.
+- Satisfaction findings come almost entirely from the conversations, because a complaint corpus
+  carries very little of it.
+
+Nothing in `data/` is fabricated by us: one corpus is real and the other is a published synthetic
+dataset, labelled as such. The only planted patterns live in `tests/fixtures`, where the analytics
+are checked against known answers. Three honest caveats about the complaints, two of which the UI
+states out loud:
 
 - Dates are when the regulator received the complaint, which lags the contact by days to weeks.
 - The corpus is complaints, so satisfaction findings are *positive moments inside complaints*, not a
@@ -88,6 +114,7 @@ known answers. Three honest caveats, two of which the UI states out loud:
 python -m voc ingest pull --start 2024-07 --end 2026-06   # real data into data/raw/ (month by month, cached)
 python -m voc ingest profile --target 4500                # per-month/week/product profile and the support gate
 python -m voc ingest sample --target 4500 --seed 20260911 # -> data/calls.jsonl
+python -m voc ingest transcripts --path data/raw/hf/*.jsonl --source talkmap   # the second corpus
 python -m voc extract                                     # step 1 (add --dry-run first to see the cost)
 python -m voc theme run                                   # step 2 (seed, consolidate, reassign, stability)
 python -m voc build-db                                    # files -> data/voc.sqlite, then materialise trends
@@ -128,10 +155,20 @@ banks will show up as a difference between problems.
 
 **More products.** `PRODUCTS` in `voc/ingest/cfpb.py` lists the nine pulled today; add to it and re-pull.
 
-**Real call transcripts instead of complaints.** Already supported, not future work:
+**Real call transcripts instead of complaints.** Already supported, not future work, and already
+exercised: the second corpus in this repo arrived this way.
 
 ```bash
 python -m voc ingest transcripts --path ./calls --source contact_centre
+```
+
+A Hugging Face conversation dataset can be pulled straight into that shape:
+
+```python
+from voc.ingest.hf_conversations import pull
+from voc.paths import get_paths
+pull(get_paths(), "talkmap/banking-conversation-corpus", target=1000, seed=20260911,
+     company="UNION FINANCIAL (SYNTHETIC)")
 ```
 
 The call record carries the turns, the turn count and the customer's character ranges, so evidence quotes
