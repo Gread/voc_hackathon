@@ -75,10 +75,14 @@ def get_client(mode: str | None = None) -> LLMClient:
     from voc.llm.cached_client import CachedClient
     inner = None
     if settings.api_key_present:
-        from voc.llm.anthropic_client import AnthropicClient
-        inner = AnthropicClient()
+        if settings.provider == "openrouter":
+            from voc.llm.openrouter_client import OpenRouterClient
+            inner = OpenRouterClient()
+        else:
+            from voc.llm.anthropic_client import AnthropicClient
+            inner = AnthropicClient()
     if mode == "live":
         if inner is None:
-            raise LLMError("VOC_LLM=live but no ANTHROPIC_API_KEY is set")
+            raise LLMError(f"VOC_LLM=live but no key is set for provider {settings.provider!r}")
         return CachedClient(inner=inner, write_only=True)
     return CachedClient(inner=inner)

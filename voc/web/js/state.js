@@ -1,6 +1,6 @@
 // Filters and as-of week live in the URL so any view can be shared or reloaded.
 
-const LIST_KEYS = ["product", "segment", "region_group", "channel", "region", "company"];
+const LIST_KEYS = ["product", "segment", "region_group", "channel", "region", "company", "source"];
 const SCALAR_KEYS = ["date_from", "date_to", "as_of"];
 const listeners = new Set();
 

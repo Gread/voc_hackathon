@@ -8,7 +8,7 @@ from pydantic import BaseModel
 
 from voc.taxonomy import loader as tx
 
-DIMENSIONS = ("product", "channel", "region_group", "region", "segment", "company")
+DIMENSIONS = ("product", "channel", "region_group", "region", "segment", "company", "source")
 
 
 class Filters(BaseModel):
@@ -18,6 +18,7 @@ class Filters(BaseModel):
     region: list[str] | None = None
     segment: list[str] | None = None
     company: list[str] | None = None
+    source: list[str] | None = None      # which corpus a contact came from
     date_from: str | None = None
     date_to: str | None = None
 
@@ -89,6 +90,7 @@ FILTERS_API_SCHEMA = {
         "region": _nullable_list(None),
         "segment": _nullable_list(tx.codes("segment")),
         "company": _nullable_list(None),
+        "source": _nullable_list(None),      # which corpus; values come from the data, not a taxonomy
         "date_from": {"type": ["string", "null"]},
         "date_to": {"type": ["string", "null"]},
     },

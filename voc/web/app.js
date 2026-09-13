@@ -24,6 +24,46 @@ function fillSelect(id, key, values, labels = label) {
   });
 }
 
+/** Corpus picker. Two corpora differ in kind, so the choice stays visible and never defaults to a
+ *  silent blend: unticking everything shows everything, which is what "no filter" means everywhere
+ *  else in this interface. */
+function setupSources(sources) {
+  const wrap = document.getElementById("sources");
+  const boxes = document.getElementById("sourceBoxes");
+  if (!sources || sources.length < 2) return;   // one corpus needs no picker
+  wrap.hidden = false;
+  const chosen = () => state.filters.source || [];
+
+  const render = () => {
+    clear(boxes);
+    for (const src of sources) {
+      const on = chosen().includes(src.source);
+      const input = el("input", { type: "checkbox" });
+      input.checked = on;
+      const label = el("label", {
+        class: `source-box${on ? " on" : ""}${src.kind === "synthetic" ? " synthetic" : ""}`,
+        title: src.note || "",
+      }, [
+        input,
+        el("span", { text: src.label || src.source }),
+        src.kind === "synthetic" ? el("span", { class: "tag", text: "synthetic" }) : null,
+        el("span", { class: "n", text: num(src.n_calls) }),
+      ]);
+      input.addEventListener("change", () => {
+        const next = input.checked
+          ? [...chosen(), src.source]
+          : chosen().filter((v) => v !== src.source);
+        // Every box ticked is the same scope as none ticked; keep the URL clean.
+        setFilter("source", next.length === sources.length ? [] : next);
+        render();
+      });
+      boxes.appendChild(label);
+    }
+  };
+  render();
+  onChange((reason) => { if (reason === "filters") render(); });
+}
+
 async function loadFilterOptions() {
   // Options come from the data itself: the breakdown endpoint lists every value with support.
   const dims = [["fProduct", "product"], ["fSegment", "segment"], ["fRegionGroup", "region_group"]];
@@ -132,6 +172,8 @@ async function boot() {
   initDashboard();
   document.getElementById("clearFilters").addEventListener("click", () => {
     clearFilters();
+    for (const box of document.querySelectorAll("#sourceBoxes input")) box.checked = false;
+    for (const box of document.querySelectorAll("#sourceBoxes .source-box")) box.classList.remove("on");
     for (const id of ["fProduct", "fSegment", "fRegionGroup"]) {
       for (const o of document.getElementById(id).options) o.selected = false;
     }
@@ -156,6 +198,7 @@ async function boot() {
   pipelineStrip();
   if (!state.asOf && meta.as_of_week) state.asOf = meta.as_of_week;
   setupAsOf(meta.as_of_weeks || []);
+  setupSources(meta.sources || []);
   initAsk(meta.questions || []);
   await loadFilterOptions();
   renderAll();

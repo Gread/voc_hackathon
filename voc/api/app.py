@@ -31,6 +31,16 @@ class NoCacheStatic(StaticFiles):
         return response
 
 
+# What each corpus is, in the interface's own words. Two corpora that differ in kind must not be
+# blended silently: a reader has to know which one a number came from.
+SOURCE_LABELS = {
+    "cfpb": {"label": "Written complaints", "kind": "real",
+             "note": "Real complaints to the US regulator about one bank, 24 months."},
+    "talkmap": {"label": "Call transcripts", "kind": "synthetic",
+                "note": "Synthetic agent/customer conversations, one month, no trend history."},
+}
+
+
 def _filters_from_request(request: Request) -> Filters:
     params: dict[str, Any] = {}
     for dim in DIMENSIONS:
@@ -115,6 +125,13 @@ def create_app(data_dir: Path | None = None) -> FastAPI:
                 profile = {}
         weeks = [r["as_of_week"] for r in con.execute(
             "SELECT DISTINCT as_of_week FROM emerging_scores ORDER BY as_of_week")]
+        sources = [dict(r) for r in con.execute(
+            "SELECT c.source, COUNT(*) AS n_calls, MIN(c.date) AS date_from, MAX(c.date) AS date_to, "
+            "       COUNT(DISTINCT c.shape) AS n_shapes, MIN(c.shape) AS shape "
+            "FROM calls c GROUP BY c.source ORDER BY n_calls DESC")]
+        for row in sources:
+            row.update(SOURCE_LABELS.get(row["source"], {"label": row["source"], "kind": "unknown",
+                                                         "note": ""}))
 
         def _num(key: str) -> Any:
             v = rows.get(key)
@@ -141,6 +158,7 @@ def create_app(data_dir: Path | None = None) -> FastAPI:
                          "moments inside complaints."),
             },
             "questions": load_questions(),
+            "sources": sources,
             "as_of_weeks": weeks,
             "live_model": settings.ask_model if settings.can_call_api else None,
             "warning": state["error"],
