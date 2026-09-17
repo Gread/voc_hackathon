@@ -287,3 +287,32 @@ def test_the_weekly_review_respects_the_corpus_filter(client):
     filtered = client.get("/api/weekly", params={"week": week, "source": "nope"}).json()
     assert filtered["sections"]["changed"]["n_calls"] == 0
     assert everything["sections"]["changed"]["n_calls"] >= filtered["sections"]["changed"]["n_calls"]
+
+
+def test_a_transcript_takes_the_product_the_reading_found(con):
+    """A complaint arrives with the regulator's product field, which is kept independent of the
+    reading as a quality metric. A transcript arrives with none, so without this every conversation
+    sits in other_or_unspecified and the product breakdown cannot tell a mortgage from a card."""
+    from voc.store.build import adopt_read_product
+
+    rows = con.execute(
+        "SELECT c.call_id, c.product, c.product_raw FROM calls c WHERE c.product_raw IS NULL "
+        "AND EXISTS (SELECT 1 FROM topics t WHERE t.call_id = c.call_id "
+        "            AND t.product != 'other_or_unspecified') LIMIT 1").fetchall()
+    if not rows:
+        pytest.skip("this fixture has no source-less contacts")
+    call_id = rows[0]["call_id"]
+
+    con.execute("UPDATE calls SET product = 'other_or_unspecified' WHERE call_id = ?", [call_id])
+    assert adopt_read_product(con) >= 1
+    after = con.execute("SELECT product FROM calls WHERE call_id = ?", [call_id]).fetchone()["product"]
+    assert after != "other_or_unspecified"
+
+    # The form's own label must never be overwritten: it is the free accuracy check.
+    labelled = con.execute("SELECT call_id, product, product_raw FROM calls "
+                           "WHERE product_raw IS NOT NULL LIMIT 1").fetchone()
+    if labelled:
+        before = labelled["product"]
+        adopt_read_product(con)
+        assert con.execute("SELECT product FROM calls WHERE call_id = ?",
+                           [labelled["call_id"]]).fetchone()["product"] == before

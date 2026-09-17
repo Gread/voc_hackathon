@@ -81,6 +81,26 @@ def insert_calls(con: sqlite3.Connection, calls: list[CallRecord]) -> None:
     con.executemany(f"INSERT INTO calls VALUES ({','.join('?' * 22)})", rows)
 
 
+def adopt_read_product(con: sqlite3.Connection) -> int:
+    """Give a contact the product the reading found, but only where the source carried no label.
+
+    Complaint records arrive with the regulator's own product field, which is deliberately kept
+    independent of the reading so it can serve as a free quality metric. A call transcript arrives
+    with no product at all, so every one of them would otherwise sit in `other_or_unspecified` and
+    the product breakdowns would treat a mortgage call and a card dispute as the same thing.
+    """
+    cur = con.execute("""
+        UPDATE calls SET product = (
+            SELECT t.product FROM topics t
+            WHERE t.call_id = calls.call_id AND t.product != 'other_or_unspecified'
+            GROUP BY t.product ORDER BY COUNT(*) DESC, t.product LIMIT 1)
+        WHERE calls.product_raw IS NULL
+          AND calls.product = 'other_or_unspecified'
+          AND EXISTS (SELECT 1 FROM topics t WHERE t.call_id = calls.call_id
+                      AND t.product != 'other_or_unspecified')""")
+    return cur.rowcount
+
+
 def insert_extractions(con: sqlite3.Connection, extractions: list[dict], call_ids: set[str]) -> dict[str, int]:
     ex_rows, reasons, products, services, topics, evidence, positives = [], [], [], [], [], [], []
     skipped = 0
@@ -285,6 +305,7 @@ def build(paths: Paths | None = None, run_trends: bool = True, quiet: bool = Fal
         create_schema(con)
         insert_calls(con, calls)
         ex = insert_extractions(con, extractions, {c.call_id for c in calls})
+        ex["product_from_reading"] = adopt_read_product(con)
         th = insert_themes(con, paths)
         n_wordings = insert_wordings(con)
         insert_totals(con, calls, profile)

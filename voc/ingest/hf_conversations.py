@@ -103,8 +103,10 @@ def pull(paths: Paths, dataset: str, *, target: int, seed: int, company: str,
     out.parent.mkdir(parents=True, exist_ok=True)
     owned = client is None
     client = client or httpx.Client(timeout=90.0)
-    kept: list[dict[str, Any]] = []
+    kept = 0
     seen = offset = 0
+    # Written as they arrive: a long pull that only writes at the end loses everything it read.
+    handle = out.open("a" if append else "w", encoding="utf-8")
     try:
         def rows() -> Iterator[dict[str, Any]]:
             nonlocal offset
@@ -122,16 +124,16 @@ def pull(paths: Paths, dataset: str, *, target: int, seed: int, company: str,
                 continue
             record = to_transcript(conv, company=company, fraction=1.0)
             if record is not None:
-                kept.append(record)
-                if len(kept) % 250 == 0:
-                    print(f"  {len(kept)}/{target} conversations", flush=True)
-            if len(kept) >= target:
+                handle.write(json.dumps(record, ensure_ascii=False) + "\n")
+                kept += 1
+                if kept % 100 == 0:
+                    handle.flush()
+                    print(f"  {kept}/{target} conversations", flush=True)
+            if kept >= target:
                 break
     finally:
+        handle.close()
         if owned:
             client.close()
-    with out.open("a" if append else "w", encoding="utf-8") as handle:
-        for record in kept:
-            handle.write(json.dumps(record, ensure_ascii=False) + "\n")
-    print(f"hf: {seen} conversations scanned ({skip} skipped), {len(kept)} kept -> {out}")
+    print(f"hf: {seen} conversations scanned ({skip} skipped), {kept} kept -> {out}")
     return out
