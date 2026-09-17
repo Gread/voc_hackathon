@@ -31,6 +31,8 @@ export const api = {
   call: (id) => getJSON(`/api/calls/${encodeURIComponent(id)}`),
   resultRows: (resultId, qhash) => getJSON(`/api/results/${encodeURIComponent(resultId)}/rows` + (qhash ? `?qhash=${encodeURIComponent(qhash)}` : "")),
   questions: () => getJSON("/api/questions"),
+  weekly: (week) => getJSON("/api/weekly", week ? { week } : {}),
+  weeks: () => getJSON("/api/weeks"),
   answer: (qhash) => getJSON(`/api/answers/${encodeURIComponent(qhash)}`),
 };
 

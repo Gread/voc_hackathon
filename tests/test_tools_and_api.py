@@ -261,3 +261,29 @@ def test_the_data_version_does_not_depend_on_line_endings(tmp_path):
     different = tmp_path / "other.jsonl"
     different.write_bytes(b"\n".join(body[:2]) + b"\n")
     assert file_sha(lf) != file_sha(different), "different content must still hash differently"
+
+
+def test_the_weekly_review_answers_all_four_questions(client):
+    payload = client.get("/api/weekly").json()
+    assert set(payload["sections"]) == {"changed", "drove_feeling", "needs_attention", "supporting"}
+
+    changed = payload["sections"]["changed"]
+    assert changed["week_start"] <= changed["week_end"]
+    assert changed["n_calls"] >= 0
+
+    # The review is read fast and acted on, so it has to say what the evidence cannot bear.
+    assert payload["sections"]["supporting"]["limits"], "a weekly review must state its own limits"
+
+
+def test_a_week_with_no_contacts_is_a_404_not_an_empty_review(client):
+    assert client.get("/api/weekly", params={"week": "1999-W01"}).status_code == 404
+
+
+def test_the_weekly_review_respects_the_corpus_filter(client):
+    weeks = client.get("/api/weeks").json()["weeks"]
+    assert weeks == sorted(weeks) and weeks, "weeks must come back ascending"
+    week = weeks[-1]
+    everything = client.get("/api/weekly", params={"week": week}).json()
+    filtered = client.get("/api/weekly", params={"week": week, "source": "nope"}).json()
+    assert filtered["sections"]["changed"]["n_calls"] == 0
+    assert everything["sections"]["changed"]["n_calls"] >= filtered["sections"]["changed"]["n_calls"]

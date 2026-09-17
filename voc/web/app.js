@@ -3,6 +3,7 @@
 import { api } from "./js/api.js";
 import { initAsk } from "./js/ask.js";
 import { initDrawer } from "./js/calldrawer.js";
+import { initWeekly } from "./js/weekly.js";
 import { initDashboard, renderAll, renderAsOfOnly } from "./js/dashboard.js";
 import { clear, el, esc, label, num, pct } from "./js/format.js";
 import { clearFilters, onChange, queryParams, readURL, setAsOf, setFilter, state } from "./js/state.js";
@@ -203,6 +204,7 @@ async function boot() {
   if (!state.asOf && meta.as_of_week) state.asOf = meta.as_of_week;
   setupAsOf(meta.as_of_weeks || []);
   setupSources(meta.sources || []);
+  await initWeekly(meta.as_of_week);
   initAsk(meta.questions || []);
   await loadFilterOptions();
   renderAll();

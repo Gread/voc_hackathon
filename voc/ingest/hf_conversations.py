@@ -88,6 +88,7 @@ def to_transcript(conv: dict[str, Any], *, company: str, fraction: float) -> dic
 
 
 def pull(paths: Paths, dataset: str, *, target: int, seed: int, company: str,
+         skip: int = 0, append: bool = False,
          out: Path | None = None, client: httpx.Client | None = None) -> Path:
     """Read the leading conversations of the dataset and write transcript JSONL.
 
@@ -95,7 +96,8 @@ def pull(paths: Paths, dataset: str, *, target: int, seed: int, company: str,
     date (every offset carries the same September 2023 spread), so the first N conversations are as
     representative in time as any other N, and reading them costs 1 request per 100 utterances
     instead of paging the whole 5.5M-row corpus to sample a fraction of it. Deterministic all the
-    same: the same target gives the same conversations.
+    same: the same target gives the same conversations, and `skip` continues where a previous pull
+    stopped so a corpus can be grown without re-reading what is already ingested.
     """
     out = out or paths.data_dir / "raw" / "hf" / f"{dataset.replace('/', '__')}.jsonl"
     out.parent.mkdir(parents=True, exist_ok=True)
@@ -116,18 +118,20 @@ def pull(paths: Paths, dataset: str, *, target: int, seed: int, company: str,
 
         for conv in group_conversations(rows()):
             seen += 1
+            if seen <= skip:                      # already ingested by an earlier pull
+                continue
             record = to_transcript(conv, company=company, fraction=1.0)
             if record is not None:
                 kept.append(record)
-                if len(kept) % 100 == 0:
+                if len(kept) % 250 == 0:
                     print(f"  {len(kept)}/{target} conversations", flush=True)
             if len(kept) >= target:
                 break
     finally:
         if owned:
             client.close()
-    with out.open("w", encoding="utf-8") as handle:
+    with out.open("a" if append else "w", encoding="utf-8") as handle:
         for record in kept:
             handle.write(json.dumps(record, ensure_ascii=False) + "\n")
-    print(f"hf: {seen} conversations scanned, {len(kept)} kept ({seen - len(kept)} too short) -> {out}")
+    print(f"hf: {seen} conversations scanned ({skip} skipped), {len(kept)} kept -> {out}")
     return out

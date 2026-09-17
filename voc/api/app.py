@@ -273,6 +273,19 @@ def create_app(data_dir: Path | None = None) -> FastAPI:
                          "reran": bool(rerun), "matches_stored": matches,
                          "sql": statements, "rows": Q.call_list(con, ids[:200])}, con)
 
+    @app.get("/api/weekly")
+    def weekly(request: Request, week: str | None = None) -> JSONResponse:
+        """The weekly customer review: four sections for one ISO week."""
+        from voc.store.weekly import weekly_review
+
+        con = db()
+        return envelope(weekly_review(con, week, _filters_from_request(request)), con)
+
+    @app.get("/api/weeks")
+    def weeks() -> JSONResponse:
+        con = db()
+        return envelope({"weeks": Q.available_weeks(con)}, con)
+
     @app.get("/api/questions")
     def questions() -> JSONResponse:
         from voc.agent import cache as cache_mod

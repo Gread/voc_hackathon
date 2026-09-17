@@ -64,6 +64,21 @@ def wls_direction(xs: list[float], ys: list[float], ws: list[float]) -> dict[str
     return {"direction": direction, "slope": round(slope, 6), "t_stat": round(t, 2), "n_points": len(pts)}
 
 
+def week_monday(week: str) -> str:
+    """ISO date of the Monday that opens an ISO week."""
+    return date.fromisocalendar(int(week[:4]), int(week[6:]), 1).isoformat()
+
+
+def week_sunday(week: str) -> str:
+    """ISO date of the Sunday that closes an ISO week."""
+    return date.fromisocalendar(int(week[:4]), int(week[6:]), 7).isoformat()
+
+
+def available_weeks(con: sqlite3.Connection) -> list[str]:
+    """Every ISO week that actually has contacts, ascending."""
+    return [r["week"] for r in con.execute("SELECT DISTINCT week FROM calls ORDER BY week")]
+
+
 def week_shift(week: str, delta: int) -> str:
     """ISO week string shifted by delta weeks (YYYY-Www)."""
     y, w = int(week[:4]), int(week[6:])
