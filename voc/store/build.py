@@ -53,6 +53,20 @@ def check_provenance(extractions: list[dict], llm_mode: str) -> None:
         raise BuildRefused(f"{n_fake} extractions were produced by the fake client; set VOC_LLM=fake to index them")
 
 
+def read_calls_only(calls: list[CallRecord], extractions: list[dict]) -> tuple[list[CallRecord], dict[str, int]]:
+    """Index only the calls whose reading succeeded.
+
+    A pulled-but-unread call is not evidence of anything, and leaving it in would corrupt every
+    share silently: `scope()` divides by COUNT(*) over calls, so 10k pulled against 7k read would
+    understate each percentage by a third while still looking like a clean answer. Pulling more
+    than we read is normal (a corpus can be grown in stages), so this is a filter, not a refusal —
+    but the counts go into meta so the gap is visible rather than inferred.
+    """
+    ok = {e["call_id"] for e in extractions if e.get("status") == "ok"}
+    kept = [c for c in calls if c.call_id in ok]
+    return kept, {"n_pulled": len(calls), "n_read": len(kept), "n_pulled_not_read": len(calls) - len(kept)}
+
+
 def resolve_effective(themes: list[dict]) -> dict[str, str]:
     """theme_id -> effective theme id following merged_into chains (catch_all counts as active)."""
     parent = {t["theme_id"]: (t.get("merged_into") if t.get("status") == "merged" and t.get("merged_into") else None)
@@ -296,6 +310,7 @@ def build(paths: Paths | None = None, run_trends: bool = True, quiet: bool = Fal
     calls = load_calls(paths)
     extractions = list(read_jsonl(paths.extractions))
     check_provenance(extractions, settings.llm_mode)
+    calls, coverage = read_calls_only(calls, extractions)
     profile = read_json(paths.profile, {})
 
     tmp_db = paths.sqlite.with_name(paths.sqlite.name + ".tmp")
@@ -314,12 +329,16 @@ def build(paths: Paths | None = None, run_trends: bool = True, quiet: bool = Fal
         if not quiet:
             print(f"build-db: {len(calls)} calls, {ex['n_extracted']} extractions ok ({ex['n_error']} errors), "
                   f"{ex['n_topics']} topics, {th['n_themes']} themes ({th['n_active']} counted), {n_wordings} wordings")
+            if coverage["n_pulled_not_read"]:
+                print(f"build-db: {coverage['n_pulled_not_read']} pulled calls were not read and are "
+                      f"outside the index, so shares divide by the {coverage['n_read']} that were")
         if run_trends:
             materialize(con, quiet=quiet)
         meta: dict[str, Any] = {
             "data_version": compute_data_version(paths), "as_of_week": compute_as_of_week(con),
             "llm_mode": settings.llm_mode, "built_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
             "n_calls": len(calls), "n_extracted": ex["n_extracted"], "n_errors": ex["n_error"],
+            "n_pulled": coverage["n_pulled"], "n_pulled_not_read": coverage["n_pulled_not_read"],
             "n_topics": ex["n_topics"], "n_themes": th["n_active"], "n_members": th["n_members"],
             "company": settings.company, "taxonomy_version": tx.version(),
             "extraction_prompt_version": next((e.get("prompt_version") for e in extractions if e.get("prompt_version")), None),
