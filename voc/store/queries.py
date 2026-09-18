@@ -1009,3 +1009,76 @@ def call_list(con: sqlite3.Connection, call_ids: list[str]) -> list[dict[str, An
             FROM calls c WHERE c.call_id IN ({_placeholders(chunk)})""", chunk))
     out.sort(key=lambda r: (r["date"], r["call_id"]), reverse=True)
     return out
+
+
+# --- theme graph ---------------------------------------------------------------------------------
+
+GRAPH_MAX_NODES = 18
+GRAPH_MIN_LINK = 3
+
+
+def theme_graph(con: sqlite3.Connection, filters: Filters, limit: int = GRAPH_MAX_NODES,
+                min_link: int = GRAPH_MIN_LINK) -> dict[str, Any]:
+    """Themes as nodes; a link is the conversations that raised both of them.
+
+    The link is what a ranked list cannot show. A theme only ever raised alone is a different kind
+    of problem from one sitting between two clusters, and the ranking looks identical either way.
+
+    Abstention themes ("other: ...") are left out: they group calls the reading could not place, so
+    a link through one would mean "both were unclassifiable", which is not a shared experience. The
+    count that were dropped is reported rather than hidden.
+    """
+    q = Q(con)
+    sc = scope(q, filters)
+    where, params = filters_where(filters)
+
+    nodes = [dict(r) for r in q.rows(f"""
+        SELECT th.theme_id, th.name, th.driver_category,
+               COUNT(DISTINCT c.call_id) AS n_calls,
+               ROUND(AVG(e.overall_sentiment), 2) AS mean_sentiment
+        FROM themes th
+        JOIN theme_members tm ON tm.theme_id = th.theme_id
+        JOIN topics t ON t.topic_id = tm.topic_id
+        JOIN calls c ON c.call_id = t.call_id
+        JOIN extractions e ON e.call_id = c.call_id
+        WHERE {where} AND th.name NOT LIKE 'other:%'
+        GROUP BY th.theme_id
+        HAVING n_calls >= ?
+        ORDER BY n_calls DESC, th.name
+        LIMIT ?""", params + [MIN_SUPPORT, max(2, min(40, limit))])]
+
+    n_other = q.one(f"""
+        SELECT COUNT(DISTINCT th.theme_id) AS n FROM themes th
+        JOIN theme_members tm ON tm.theme_id = th.theme_id
+        JOIN topics t ON t.topic_id = tm.topic_id
+        JOIN calls c ON c.call_id = t.call_id
+        WHERE {where} AND th.name LIKE 'other:%'""", params)["n"]
+
+    ids = [r["theme_id"] for r in nodes]
+    edges: list[dict[str, Any]] = []
+    if len(ids) > 1:
+        marks = _placeholders(ids)
+        edges = [dict(r) for r in q.rows(f"""
+            WITH m AS (
+                SELECT DISTINCT tm.theme_id AS theme_id, t.call_id AS call_id
+                FROM theme_members tm
+                JOIN topics t ON t.topic_id = tm.topic_id
+                JOIN calls c ON c.call_id = t.call_id
+                WHERE {where} AND tm.theme_id IN ({marks}))
+            SELECT a.theme_id AS source, b.theme_id AS target, COUNT(*) AS n_calls
+            FROM m a JOIN m b ON a.call_id = b.call_id AND a.theme_id < b.theme_id
+            GROUP BY a.theme_id, b.theme_id
+            HAVING n_calls >= ?
+            ORDER BY n_calls DESC""", params + ids + [max(1, min_link)])]
+
+    degree: dict[str, int] = {i: 0 for i in ids}
+    for e in edges:
+        degree[e["source"]] += 1
+        degree[e["target"]] += 1
+    for n in nodes:
+        n["n_links"] = degree[n["theme_id"]]
+
+    return q.result(rows=nodes, data={"edges": edges, "min_link": max(1, min_link),
+                                      "n_nodes": len(nodes), "n_edges": len(edges),
+                                      "n_abstention_themes_excluded": n_other,
+                                      "min_support": MIN_SUPPORT}, scope=sc)

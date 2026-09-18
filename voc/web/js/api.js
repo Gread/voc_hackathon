@@ -21,6 +21,7 @@ export const api = {
   overview: (f) => getJSON("/api/overview", f),
   reasons: (f) => getJSON("/api/reasons", { ...f, compare: 1 }),
   themes: (f, opts = {}) => getJSON("/api/themes", { ...f, ...opts }),
+  graph: (f, opts = {}) => getJSON("/api/graph", { ...f, ...opts }),
   theme: (id, f) => getJSON(`/api/themes/${encodeURIComponent(id)}`, f),
   trend: (ids, grain, f) => getJSON("/api/trend", { ...f, ids: ids.join(","), grain }),
   emerging: (f, opts = {}) => getJSON("/api/emerging", { ...f, ...opts }),

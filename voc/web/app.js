@@ -5,6 +5,8 @@ import { initAsk } from "./js/ask.js";
 import { initDrawer } from "./js/calldrawer.js";
 import { initWeekly } from "./js/weekly.js";
 import { initDashboard, renderAll, renderAsOfOnly } from "./js/dashboard.js";
+import { initGraph, showGraph } from "./js/graph.js";
+import { initNav } from "./js/nav.js";
 import { clear, el, esc, label, num, pct } from "./js/format.js";
 import { clearFilters, onChange, queryParams, readURL, setAsOf, setFilter, state } from "./js/state.js";
 import { initThemeCard } from "./js/themecard.js";
@@ -206,6 +208,8 @@ async function boot() {
   setupSources(meta.sources || []);
   await initWeekly(meta.as_of_week);
   initAsk(meta.questions || []);
+  initGraph();
+  initNav({ navGraph: showGraph });      // the scene is built on first visit, not on boot
   await loadFilterOptions();
   renderAll();
   onChange((reason) => { if (reason !== "asof") renderAll(); });

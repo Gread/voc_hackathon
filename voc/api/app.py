@@ -160,7 +160,7 @@ def create_app(data_dir: Path | None = None) -> FastAPI:
             "questions": load_questions(),
             "sources": sources,
             "as_of_weeks": weeks,
-            "live_model": settings.live_ask_model if settings.can_call_api else None,
+            "live_model": settings.live_ask_model if settings.can_ask_live else None,
             "warning": state["error"],
         }, con)
 
@@ -180,6 +180,16 @@ def create_app(data_dir: Path | None = None) -> FastAPI:
         con = db()
         return wrap(con, "list_themes", Q.list_themes(con, _filters_from_request(request), sort_by, polarity,
                                                       driver_category, min(25, max(1, limit)), _as_of(request)))
+
+    @app.get("/api/graph")
+    def graph(request: Request, limit: int = Q.GRAPH_MAX_NODES, min_link: int = Q.GRAPH_MIN_LINK) -> JSONResponse:
+        """Nodes and links for the theme graph. Not wrapped: a node's calls are fetched by opening
+        the theme, so there is no single call-id list for the whole graph worth persisting."""
+        con = db()
+        result = Q.theme_graph(con, _filters_from_request(request), limit, min_link)
+        result.pop("sql", None)
+        return envelope({"rows": result.get("rows", []), "data": result.get("data", {}),
+                         "scope": result.get("scope", {})}, con)
 
     @app.get("/api/themes/{theme_id}")
     def theme(theme_id: str, request: Request) -> JSONResponse:
@@ -338,7 +348,10 @@ def create_app(data_dir: Path | None = None) -> FastAPI:
             page = WEB_DIR / "index.html"
             if not page.exists():
                 raise HTTPException(404, "UI not built")
-            return FileResponse(page)
+            # The modules under /static already revalidate; without the same header here the shell
+            # they hang off is the one thing a refresh keeps stale, which reads as "my edit did
+            # nothing" and is worse than no caching at all.
+            return FileResponse(page, headers={"Cache-Control": "no-cache, must-revalidate"})
 
     return app
 
