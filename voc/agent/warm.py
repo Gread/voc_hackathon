@@ -25,7 +25,7 @@ def add_parser(subparsers: Any) -> None:
 
 def run(args: argparse.Namespace) -> int:
     settings = get_settings()
-    if not settings.can_call_api:
+    if not settings.can_ask_live:
         print("warm-answers needs ANTHROPIC_API_KEY (and VOC_LLM != fake)", file=sys.stderr)
         return 2
     if not db_exists():

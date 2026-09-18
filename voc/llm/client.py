@@ -65,8 +65,11 @@ class LLMClient(Protocol):
     async def acomplete_json(self, req: LLMRequest) -> LLMResult: ...
 
 
-def get_client(mode: str | None = None) -> LLMClient:
-    """Factory honouring VOC_LLM: fake | live | cached (cache first, live on miss when a key exists)."""
+def get_client(mode: str | None = None, role: str = "build") -> LLMClient:
+    """Factory honouring VOC_LLM: fake | live | cached (cache first, live on miss when a key exists).
+
+    `role` picks which provider setting applies — "ask" for live answering, "build" for the
+    extraction and theming stages, which are configured separately on purpose."""
     settings = get_settings()
     mode = mode or settings.llm_mode
     if mode == "fake":
@@ -74,8 +77,10 @@ def get_client(mode: str | None = None) -> LLMClient:
         return FakeClient()
     from voc.llm.cached_client import CachedClient
     inner = None
-    if settings.api_key_present:
-        if settings.provider == "openrouter":
+    asking = role == "ask"
+    provider = settings.ask_provider if asking else settings.build_provider
+    if settings.ask_key_present if asking else settings.build_key_present:
+        if provider == "openrouter":
             from voc.llm.openrouter_client import OpenRouterClient
             inner = OpenRouterClient()
         else:
@@ -83,6 +88,7 @@ def get_client(mode: str | None = None) -> LLMClient:
             inner = AnthropicClient()
     if mode == "live":
         if inner is None:
-            raise LLMError(f"VOC_LLM=live but no key is set for provider {settings.provider!r}")
+            raise LLMError(f"VOC_LLM=live but the {role} role points at provider {provider!r} with no key. "
+                           f"Set VOC_{role.upper()}_PROVIDER and its key, or run this stage with build-time agents.")
         return CachedClient(inner=inner, write_only=True)
     return CachedClient(inner=inner)

@@ -235,7 +235,7 @@ def run_agent(
 
     if turn is None:
         system = render_system_prompt(caveats)
-        if settings.provider == "openrouter":
+        if settings.ask_provider == "openrouter":
             from voc.agent.openrouter_turn import OpenRouterTurn
             turn = OpenRouterTurn(model, effort, system, tools_mod.TOOL_SPECS)
         else:

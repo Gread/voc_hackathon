@@ -231,7 +231,7 @@ async def stream_answer(question: str, filters: Filters | dict[str, Any] | None,
                 yield chunk
             return
 
-    can_live = settings.can_call_api and ctx.llm_mode != "fake" and turn is None
+    can_live = settings.can_ask_live and ctx.llm_mode != "fake" and turn is None
     if can_live or turn is not None:
         note, n_in_scope = scope_note(ctx.con, filters)
         async for chunk in _live(question, filters, ctx, qh, n_in_scope, turn=turn, persist=persist):

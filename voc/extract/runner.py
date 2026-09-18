@@ -162,7 +162,7 @@ def run_extract(records: list[CallRecord], calls: list[CallRecord], *, force: bo
     started = _now()
     print(f"extract: {len(records)} pending of {len(calls)} calls; mode={settings.llm_mode} "
           f"model={settings.extract_model} concurrency={settings.concurrency}")
-    if records and settings.llm_mode != "fake" and not settings.api_key_present:
+    if records and settings.llm_mode != "fake" and not settings.build_key_present:
         print("no ANTHROPIC_API_KEY: records without a cache file will be reported as errors "
               "(use --export for build-time agents or VOC_LLM=fake for a smoke run)")
     state = asyncio.run(run_async(records, make_client(settings, force), settings))
@@ -203,7 +203,7 @@ def _token_counter(settings: Settings):
     OpenRouter exposes no token-counting endpoint, so that provider falls back to the estimate
     rather than reaching for a client it has no key for.
     """
-    if settings.can_call_api and settings.provider != "openrouter":
+    if settings.can_call_api and settings.build_provider != "openrouter":
         from voc.llm.anthropic_client import AnthropicClient
         api = AnthropicClient()
 
