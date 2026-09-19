@@ -99,8 +99,14 @@ ANSWER_API_SCHEMA = _obj(
             ["id", "statement", "headline", "result_ids", "call_ids", "n_calls", "theme_ids", "key_numbers"],
             {"id": {"type": "string"}, "statement": {"type": "string"}, "headline": {"type": "boolean"},
              "result_ids": {"type": "array", "items": {"type": "string"}},
-             "call_ids": {"type": "array", "items": {"type": "string"}},
-             "n_calls": {"type": "integer"},
+             "call_ids": {"type": "array", "items": {"type": "string"},
+                          "description": "Calls backing this claim. List them all when the claim is "
+                                         "about just these calls; when it is about more than you can "
+                                         "list, give a few as examples and put the real total in "
+                                         "n_calls. The server recounts either way."},
+             "n_calls": {"type": "integer",
+                         "description": "How many calls the claim is really about, which may be far "
+                                        "more than the ids listed in call_ids."},
              "theme_ids": {"type": "array", "items": {"type": "string"}},
              "key_numbers": {"type": "array", "items": _obj(["label", "value", "result_id"], {
                  "label": {"type": "string"}, "value": {"type": "number"}, "result_id": {"type": "string"}})}})},

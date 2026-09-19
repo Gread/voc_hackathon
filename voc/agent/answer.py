@@ -87,6 +87,24 @@ def full_call_ids(con: sqlite3.Connection, result_id: str, envelope: dict[str, A
     return []
 
 
+def ids_for_themes(con: sqlite3.Connection, call_ids: list[str], theme_ids: list[str]) -> list[str]:
+    """The calls in `call_ids` that belong to any of `theme_ids`, order preserved."""
+    if not call_ids or not theme_ids:
+        return []
+    keep: set[str] = set()
+    for i in range(0, len(call_ids), 500):
+        chunk = call_ids[i:i + 500]
+        marks, tmarks = ",".join("?" * len(chunk)), ",".join("?" * len(theme_ids))
+        try:
+            rows = con.execute(f"SELECT DISTINCT call_id FROM v_theme_calls "
+                               f"WHERE call_id IN ({marks}) AND theme_id IN ({tmarks})",
+                               [*chunk, *theme_ids]).fetchall()
+        except sqlite3.Error:
+            return []
+        keep.update(r[0] for r in rows)
+    return [i for i in call_ids if i in keep]
+
+
 def _week_start(week: str) -> date:
     y, w = week.split("-W")
     return date.fromisocalendar(int(y), int(w), 1)
@@ -224,12 +242,30 @@ def verify_answer(
         for rid in known:
             union.extend(full_call_ids(con, rid, results.get(rid), qhash))
         ids = list(dict.fromkeys(union))
-        # A tool result shows at most MAX_CALL_IDS_SHOWN ids, so a claim quoting that many means
-        # "this whole result"; only a shorter list is a deliberate subset worth narrowing to.
-        if c.call_ids and len(c.call_ids) < MAX_CALL_IDS_SHOWN:
+        # A short list of call_ids is ambiguous: it can be a deliberate subset, or a handful of
+        # examples for a claim about far more calls. The model's own n_calls settles it - a claim of
+        # 312 calls citing 5 ids means "312, here are five of them". Narrowing those to 5 would make
+        # verification understate the evidence, which is the one failure mode worse than silence
+        # here: a 312-call finding would print as anecdotal and read as a thin corpus.
+        examples = bool(c.call_ids) and bool(c.n_calls) and c.n_calls > len(c.call_ids)
+        if c.call_ids and not examples and len(c.call_ids) < MAX_CALL_IDS_SHOWN:
             given = set(c.call_ids)
             narrowed = [i for i in ids if i in given]
             ids = narrowed if narrowed else ids
+        elif examples and c.theme_ids:
+            # The result may span several themes while the claim is about one, so count that theme
+            # inside the result rather than the whole result. Only ever narrow: a recount coming out
+            # ABOVE the model's own number means the claim is about a slice of the theme we cannot
+            # rebuild from a theme_id alone - "older Americans hit this 2.26x more often" is 25 calls
+            # inside a 312-call theme - and widening it there would overclaim, which is the failure
+            # this recount exists to prevent. Those fall back to the cited examples and read thin,
+            # which is the honest answer when the evidence set cannot be reconstructed.
+            scoped = ids_for_themes(con, ids, c.theme_ids)
+            if scoped and len(scoped) <= c.n_calls:
+                ids = scoped
+            else:
+                given = set(c.call_ids)
+                ids = [i for i in ids if i in given] or ids
         if not known or not ids:
             vc.verified = False
             vc.verified_n = 0

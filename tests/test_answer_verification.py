@@ -140,3 +140,58 @@ def test_another_questions_result_ids_never_count_toward_this_claim(con):
     orphan = verify(con, _answer(), qhash="a_question_that_ran_nothing").claims[0]
     assert orphan.verified is False
     assert "not_supported_by_retrieved_data" in orphan.flags
+
+
+def test_a_few_cited_ids_are_examples_not_the_whole_evidence_base(con):
+    """A claim about 60 calls that cites 5 of them must still verify at 60.
+
+    Recounting only the listed ids turned real findings into anecdotes: a theme carrying 312 calls
+    printed as "anecdotal, 5 calls" because the model had quoted five of them to illustrate. That
+    reads as a thin corpus, which is the opposite of what the recount exists to prevent - it is
+    there to stop the model inflating a number, not to shrink one the tools already support.
+    """
+    answer = _answer(claims=[{"id": "c1", "statement": "Fees lead", "headline": True, "result_ids": ["r1"],
+                              "call_ids": ["c1", "c2", "c3", "c4", "c5"], "n_calls": 60,
+                              "theme_ids": [], "key_numbers": []}])
+    out = verify(con, answer)
+
+    assert out.claims[0].verified_n == 60, "five illustrative ids must not shrink the evidence base"
+    assert out.claims[0].confidence.tier == "broad_pattern"
+
+
+def test_cited_ids_still_narrow_when_the_claim_is_only_about_them(con):
+    """The other reading has to keep working: n_calls matching the list means a deliberate subset."""
+    answer = _answer(claims=[{"id": "c1", "statement": "These five", "headline": True, "result_ids": ["r1"],
+                              "call_ids": ["c1", "c2", "c3", "c4", "c5"], "n_calls": 5,
+                              "theme_ids": [], "key_numbers": []}])
+    out = verify(con, answer)
+
+    assert out.claims[0].verified_n == 5
+
+
+def test_recount_never_comes_out_above_the_claim(con):
+    """A slice of a theme must not be widened to the whole theme.
+
+    "Older Americans hit this 2.26x more often" is 25 calls inside a 312-call theme. The theme_id is
+    the only handle the claim gives us, so scoping by it would recount 25 as 312 and print a slice
+    finding with the whole theme's weight behind it. Overclaiming is the failure the recount exists
+    to prevent, so a recount that lands above the model's own number is the server being wrong, not
+    the model - and it falls back to the cited examples rather than inventing support.
+    """
+    con.execute("INSERT INTO themes(theme_id, bucket, name, problem_statement, root_cause, polarity, status) "
+                "VALUES ('t1','b','n','p','r','negative','active')")
+    for i in range(2, 61):     # c1:0 is already in the fixture
+        con.execute("INSERT INTO topics(topic_id, call_id, idx, topic_label, issue_statement, product, sentiment, "
+                    "driver_category, driver, outcome, evidence_ok) VALUES (?,?,0,'x','x','credit_card',-1,"
+                    "'unexpected_charge','x','unresolved',1)", (f"c{i}:0", f"c{i}"))
+    for i in range(1, 61):
+        con.execute("INSERT INTO theme_members(topic_id, theme_id, effective_theme_id, confidence, pass, batch_id) "
+                    "VALUES (?, 't1', 't1', 0.9, 'reassign', 'b/000')", (f"c{i}:0",))
+    con.commit()
+    answer = _answer(claims=[{"id": "c1", "statement": "Older Americans hit this more often", "headline": True,
+                              "result_ids": ["r1"], "call_ids": ["c1", "c2", "c3"], "n_calls": 9,
+                              "theme_ids": ["t1"], "key_numbers": []}])
+
+    out = verify(con, answer)
+
+    assert out.claims[0].verified_n <= 9, "a 9-call slice must not be recounted as the 60-call theme"
