@@ -1082,3 +1082,48 @@ def theme_graph(con: sqlite3.Connection, filters: Filters, limit: int = GRAPH_MA
                                       "n_nodes": len(nodes), "n_edges": len(edges),
                                       "n_abstention_themes_excluded": n_other,
                                       "min_support": MIN_SUPPORT}, scope=sc)
+
+
+def theme_graph_weeks(con: sqlite3.Connection, filters: Filters, theme_ids: list[str]) -> dict[str, Any]:
+    """Week-by-week call counts for graph nodes, plus the weeks a theme ran above its own baseline.
+
+    Sent as one payload rather than a request per week so playback is smooth and, more importantly,
+    so every frame is drawn from the same query. The layout is deliberately NOT part of this: nodes
+    must hold still while the weeks run, or motion in the data cannot be told from motion in the
+    picture.
+
+    The anomaly flags come from the precomputed emerging scores, which are calculated over the whole
+    corpus. Under an active filter they would describe a different population than the counts beside
+    them, so they are withheld and the payload says so - a flag that quietly means something else is
+    worse than no flag.
+    """
+    q = Q(con)
+    sc = scope(q, filters)
+    where, params = filters_where(filters)
+    if not theme_ids:
+        return q.result(rows=[], data={"weeks": [], "flags": {}, "flags_withheld": False}, scope=sc)
+
+    marks = _placeholders(theme_ids)
+    series = [dict(r) for r in q.rows(f"""
+        SELECT c.week AS week, tm.theme_id AS theme_id, COUNT(DISTINCT c.call_id) AS n_calls
+        FROM theme_members tm
+        JOIN topics t ON t.topic_id = tm.topic_id
+        JOIN calls c ON c.call_id = t.call_id
+        WHERE {where} AND tm.theme_id IN ({marks})
+        GROUP BY c.week, tm.theme_id
+        ORDER BY c.week""", params + theme_ids)]
+
+    unfiltered = where.strip() == "1=1"
+    flags: dict[str, list[dict[str, Any]]] = {}
+    if unfiltered:
+        for r in q.rows(f"""
+            SELECT entity_id AS theme_id, as_of_week AS week, ratio, z, status, n_recent, expected_recent,
+                   n_tested, expected_false_positives
+            FROM emerging_scores
+            WHERE entity_type = 'theme' AND entity_id IN ({marks}) AND status IN ('emerging', 'growing')
+            ORDER BY as_of_week""", theme_ids):
+            flags.setdefault(r["week"], []).append(dict(r))
+
+    weeks = sorted({r["week"] for r in series})
+    return q.result(rows=series, data={"weeks": weeks, "flags": flags, "flags_withheld": not unfiltered,
+                                       "n_weeks": len(weeks)}, scope=sc)

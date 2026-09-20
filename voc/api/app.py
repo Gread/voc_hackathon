@@ -191,6 +191,21 @@ def create_app(data_dir: Path | None = None) -> FastAPI:
         return envelope({"rows": result.get("rows", []), "data": result.get("data", {}),
                          "scope": result.get("scope", {})}, con)
 
+    @app.get("/api/graph/weeks")
+    def graph_weeks(request: Request, limit: int = Q.GRAPH_MAX_NODES,
+                    min_link: int = Q.GRAPH_MIN_LINK) -> JSONResponse:
+        """The same nodes, counted week by week, so the graph can be played through time.
+
+        Takes the node set from the graph query rather than a list of ids off the request, so the
+        two views cannot drift apart into showing different themes under the same layout."""
+        con = db()
+        filters = _filters_from_request(request)
+        nodes = Q.theme_graph(con, filters, limit, min_link).get("rows", [])
+        result = Q.theme_graph_weeks(con, filters, [n["theme_id"] for n in nodes])
+        result.pop("sql", None)
+        return envelope({"rows": result.get("rows", []), "data": result.get("data", {}),
+                         "scope": result.get("scope", {})}, con)
+
     @app.get("/api/themes/{theme_id}")
     def theme(theme_id: str, request: Request) -> JSONResponse:
         con = db()

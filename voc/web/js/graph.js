@@ -81,6 +81,73 @@ function radiusFor(nCalls) {
   return 2.6 + Math.sqrt(Math.max(1, nCalls)) / 3;
 }
 
+/** Play the weeks over a graph that does not move.
+ *
+ *  Only radius and glow change. The layout stays exactly where the all-time graph put it, because
+ *  a node that drifts while the weeks run cannot be told apart from a node that grew, and the whole
+ *  point of playing it is to see which themes swell and when.
+ *
+ *  A week with no calls for a theme shrinks it to the floor rather than hiding it: an empty week is
+ *  information, and a sphere that vanishes reads as a rendering fault.
+ */
+function playback(nodes, meshes, T, payload) {
+  const row = document.getElementById("graphPlay");
+  const weeks = (payload.data || {}).weeks || [];
+  if (weeks.length < 2) { row.hidden = true; return null; }
+
+  const counts = new Map();                       // week -> Map(theme_id -> n_calls)
+  for (const r of payload.rows || []) {
+    if (!counts.has(r.week)) counts.set(r.week, new Map());
+    counts.get(r.week).set(r.theme_id, r.n_calls);
+  }
+  const flags = (payload.data || {}).flags || {};
+  const base = {};
+  for (const n of nodes) base[n.theme_id] = radiusFor(n.n_calls);
+
+  const range = document.getElementById("weekRange");
+  const label = document.getElementById("weekLabel");
+  const playBtn = document.getElementById("playBtn");
+  range.max = String(weeks.length - 1);
+  row.hidden = false;
+
+  let timer = null;
+
+  const show = (idx) => {
+    const all = idx < 0;
+    const week = all ? null : weeks[idx];
+    const hot = new Set((flags[week] || []).map((f) => f.theme_id));
+    const seen = counts.get(week) || new Map();
+    for (const n of nodes) {
+      const mesh = meshes[n.theme_id];
+      if (!mesh) continue;
+      mesh.scale.setScalar(all ? 1 : radiusFor(seen.get(n.theme_id) || 0) / base[n.theme_id]);
+      // Orange is the one colour not in the sentiment scale, so a flag cannot be read as a mood.
+      mesh.material.emissive = new T.Color(!all && hot.has(n.theme_id) ? 0xff7a1a : 0x000000);
+      mesh.material.emissiveIntensity = 0.85;
+    }
+    const n_hot = hot.size;
+    label.textContent = all ? "All time"
+      : `${week}${n_hot ? ` · ${n_hot} above baseline` : ""}`;
+    label.classList.toggle("hot", !all && n_hot > 0);
+  };
+
+  const stop = () => { window.clearInterval(timer); timer = null; playBtn.textContent = "▶"; };
+  playBtn.onclick = () => {
+    if (timer) return stop();
+    playBtn.textContent = "❚❚";
+    timer = window.setInterval(() => {
+      const next = (Number(range.value) + 1) % weeks.length;
+      range.value = String(next);
+      show(next);
+    }, 260);
+  };
+  range.oninput = () => { stop(); show(Number(range.value)); };
+  document.getElementById("weekAll").onclick = () => { stop(); show(-1); };
+
+  show(-1);
+  return stop;
+}
+
 /** Stable pseudo-random from an id, so the same corpus always lays out the same way. */
 function seed(id) {
   let h = 2166136261;
@@ -211,6 +278,7 @@ function select(id) {
 
 function teardown() {
   if (!scene) return;
+  if (scene.stopPlay) scene.stopPlay();   // else the timer keeps resizing meshes that are gone
   scene.stop();
   scene = null;
 }
@@ -458,6 +526,13 @@ async function build() {
     chips.appendChild(chip);
   }
   select(nodes[0].theme_id);
+
+  // Fetched after the scene is up so the graph draws immediately and playback arrives when ready.
+  try {
+    scene.stopPlay = playback(nodes, meshes, T, await api.graphWeeks(queryParams(), { limit: LIMIT }));
+  } catch {
+    document.getElementById("graphPlay").hidden = true;   // no playback is fine; a broken graph is not
+  }
 }
 
 export function initGraph() {

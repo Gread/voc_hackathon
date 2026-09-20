@@ -22,6 +22,7 @@ export const api = {
   reasons: (f) => getJSON("/api/reasons", { ...f, compare: 1 }),
   themes: (f, opts = {}) => getJSON("/api/themes", { ...f, ...opts }),
   graph: (f, opts = {}) => getJSON("/api/graph", { ...f, ...opts }),
+  graphWeeks: (f, opts = {}) => getJSON("/api/graph/weeks", { ...f, ...opts }),
   theme: (id, f) => getJSON(`/api/themes/${encodeURIComponent(id)}`, f),
   trend: (ids, grain, f) => getJSON("/api/trend", { ...f, ids: ids.join(","), grain }),
   emerging: (f, opts = {}) => getJSON("/api/emerging", { ...f, ...opts }),
