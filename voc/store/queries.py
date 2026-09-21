@@ -1084,6 +1084,25 @@ def theme_graph(con: sqlite3.Connection, filters: Filters, limit: int = GRAPH_MA
                                       "min_support": MIN_SUPPORT}, scope=sc)
 
 
+MIN_TIMELINE_WEEKS = 26     # half a year of distinct weeks before a source counts as dated
+
+
+def dated_sources(con: sqlite3.Connection) -> list[str]:
+    """Sources whose calls actually spread over time.
+
+    Not every corpus carries a timeline. The transcript set is stamped within a single month at
+    source - 5,701 calls across 5 weeks - so putting it on a week axis piles two thirds of the
+    corpus into the first five frames and leaves a two-year flat line behind it. That is an artefact
+    of how two corpora were stapled together, not anything a customer did.
+
+    Measured rather than named: a source earns its place by covering enough distinct weeks, so a
+    corpus added later classifies itself instead of waiting for someone to remember a hard-coded id.
+    """
+    return [r["source"] for r in con.execute(
+        "SELECT source, COUNT(DISTINCT week) AS w FROM calls GROUP BY source HAVING w >= ?",
+        (MIN_TIMELINE_WEEKS,)).fetchall()]
+
+
 def theme_graph_weeks(con: sqlite3.Connection, filters: Filters, theme_ids: list[str]) -> dict[str, Any]:
     """Week-by-week call counts for graph nodes, plus the weeks a theme ran above its own baseline.
 
@@ -1104,14 +1123,19 @@ def theme_graph_weeks(con: sqlite3.Connection, filters: Filters, theme_ids: list
         return q.result(rows=[], data={"weeks": [], "flags": {}, "flags_withheld": False}, scope=sc)
 
     marks = _placeholders(theme_ids)
+    dated = dated_sources(con)
+    if not dated:
+        return q.result(rows=[], data={"weeks": [], "flags": {}, "flags_withheld": False,
+                                       "dated_sources": [], "themes_without_dates": theme_ids}, scope=sc)
+    src = _placeholders(dated)
     series = [dict(r) for r in q.rows(f"""
         SELECT c.week AS week, tm.theme_id AS theme_id, COUNT(DISTINCT c.call_id) AS n_calls
         FROM theme_members tm
         JOIN topics t ON t.topic_id = tm.topic_id
         JOIN calls c ON c.call_id = t.call_id
-        WHERE {where} AND tm.theme_id IN ({marks})
+        WHERE {where} AND c.source IN ({src}) AND tm.theme_id IN ({marks})
         GROUP BY c.week, tm.theme_id
-        ORDER BY c.week""", params + theme_ids)]
+        ORDER BY c.week""", params + dated + theme_ids)]
 
     unfiltered = where.strip() == "1=1"
     flags: dict[str, list[dict[str, Any]]] = {}
@@ -1125,5 +1149,10 @@ def theme_graph_weeks(con: sqlite3.Connection, filters: Filters, theme_ids: list
             flags.setdefault(r["week"], []).append(dict(r))
 
     weeks = sorted({r["week"] for r in series})
+    # A theme built entirely from an undated source has no week to appear in. Saying so is the point:
+    # left unsaid it just sits at the floor for the whole timeline and reads as a collapse.
+    present = {r["theme_id"] for r in series}
     return q.result(rows=series, data={"weeks": weeks, "flags": flags, "flags_withheld": not unfiltered,
-                                       "n_weeks": len(weeks)}, scope=sc)
+                                       "n_weeks": len(weeks), "dated_sources": dated,
+                                       "themes_without_dates": [t for t in theme_ids if t not in present]},
+                    scope=sc)

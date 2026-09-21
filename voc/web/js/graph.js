@@ -149,6 +149,19 @@ function playback(nodes, meshes, tubes, T, payload) {
   const modeSel = document.getElementById("playMode");
   const flags = (payload.data || {}).flags || {};
 
+  // A theme built only from an undated corpus has no week to be in. Animating it would sink it to
+  // the floor for the whole timeline and read as a collapse, so it is greyed out and held still
+  // instead, and the note says how many are in that state. Absent is not the same as zero.
+  const undated = new Set((payload.data || {}).themes_without_dates || []);
+  const note = document.getElementById("playNote");
+  const src = ((payload.data || {}).dated_sources || []).join(", ");
+  if (undated.size) {
+    note.textContent = `Weeks come from the ${src} calls, the only ones carrying a timeline. `
+      + `${undated.size} of ${nodes.length} themes are built from calls without one, and sit grey.`;
+    note.hidden = false;
+  }
+  const GREY = new T.Color(0xb9bfc6);
+
   const range = document.getElementById("weekRange");
   const label = document.getElementById("weekLabel");
   const playBtn = document.getElementById("playBtn");
@@ -168,9 +181,14 @@ function playback(nodes, meshes, tubes, T, payload) {
     for (const n of nodes) {
       const mesh = meshes[n.theme_id];
       if (!mesh) continue;
+      const dark = !whole && undated.has(n.theme_id);
       const seen = whole ? 0 : win.get(n.theme_id)[idx];
       shown += seen;
-      mesh.scale.setScalar(whole ? 1 : (relative ? relativeFor(seen, n.theme_id) : scaleFor(seen)));
+      mesh.scale.setScalar(whole || dark ? (dark ? 0.55 : 1)
+                                         : (relative ? relativeFor(seen, n.theme_id) : scaleFor(seen)));
+      mesh.material.color.set(dark ? GREY : colorFor(n.mean_sentiment));
+      mesh.material.opacity = dark ? 0.45 : 1;
+      mesh.material.transparent = dark;
       // Orange is the one colour not in the sentiment scale, so a flag cannot be read as a mood.
       mesh.material.emissive = new T.Color(!whole && hot.has(n.theme_id) ? 0xff7a1a : 0x000000);
       mesh.material.emissiveIntensity = 0.9;
