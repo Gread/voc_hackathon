@@ -196,7 +196,10 @@ export async function renderTrend(entityIds = null) {
     subtitle.textContent = `${trendGrain}ly share · ${series.length} themes`;
     trendChart("trendChart", series, { valueKey: "share" });
     const { columns, rows } = seriesToTable(series, "share");
-    attachChartTable(document.getElementById("trendChart").parentElement, columns, rows);
+    // The table/toggle append after the chart, but must sit outside .chart-box: Chart.js
+    // (responsive: true, maintainAspectRatio: false) sizes the canvas from that box's own
+    // height, and adding sibling content inside it breaks that measurement.
+    attachChartTable(document.getElementById("trendChart").closest(".panel-body"), columns, rows);
   } catch (err) { subtitle.textContent = `trend unavailable: ${err.message}`; }
 }
 
