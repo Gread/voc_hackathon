@@ -189,8 +189,8 @@ function pipelineStrip() {
   const bits = [
     `${num(counts.n_calls)} calls`, `${num(counts.n_topics)} topics`, `${num(counts.n_themes)} themes`,
   ];
-  if (qa.reason_agreement) bits.push(`reason agreement ${Number(qa.reason_agreement).toFixed(2)}`);
-  if (qa.quote_verify_rate) bits.push(`quotes verified ${pct(qa.quote_verify_rate)}`);
+  if (qa.reason_agreement) bits.push(`${pct(qa.reason_agreement)} match the bank's own labels`);
+  if (qa.quote_verify_rate) bits.push(`${pct(qa.quote_verify_rate)} of quotes verified`);
   document.getElementById("pipelineStrip").textContent = bits.join(" · ");
 }
 

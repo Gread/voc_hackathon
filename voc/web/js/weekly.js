@@ -130,10 +130,11 @@ function sectionAttention(d) {
         el("button", { class: "linkish row-name", text: r.name, onclick: () => openTheme(r.theme_id) }),
         el("span", { class: "pill " + (r.status || ""), text: (r.status || "").toUpperCase() }),
       ]),
-      el("p", { class: "footnote",
-        text: `${num(r.n_recent)} in the last four weeks against ${Number(r.expected_recent).toFixed(1)} expected`
-              + ` · z ${Number(r.z).toFixed(1)}`
-              + (r.robust_8w ? " · robust at 8 weeks" : "")
+      el("p", { class: "footnote", title: `expected ${Number(r.expected_recent).toFixed(1)} · z ${Number(r.z).toFixed(1)}`,
+        text: `${plural(Number(r.n_recent) || 0, "call")} in the last four weeks`
+              + (Number(r.expected_recent) > 0 && Number(r.n_recent) / Number(r.expected_recent) >= 1.15
+                 ? ` — about ${(Number(r.n_recent) / Number(r.expected_recent)).toFixed(1)}× the usual pace` : "")
+              + (r.robust_8w ? " · confirmed over 8 weeks, not just 4" : "")
               + (r.first_seen_week ? ` · first seen ${r.first_seen_week}` : "") }),
       r.root_cause ? el("p", { class: "trigger", text: r.root_cause }) : null,
       asks ? el("p", { class: "footnote", text: `What they asked for: ${asks}` }) : null,

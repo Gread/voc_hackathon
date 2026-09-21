@@ -90,9 +90,10 @@ function renderAnswer(answer, results, trace, toolCalls) {
         ...(claim.theme_ids || []).map((t) =>
           el("button", { class: "linkish", text: " theme", onclick: () => openTheme(t) })),
       ]),
-      unverified ? el("p", { class: "correction", text: "not supported by retrieved data" }) : null,
+      unverified ? el("p", { class: "correction", text: "Couldn't be confirmed in the actual calls, so it's not counted." }) : null,
       ...(claim.corrections || []).map((c) =>
-        el("p", { class: "correction", text: `${c.field}: the model said ${c.model}, the server counted ${c.server}` })),
+        el("p", { class: "correction", title: `field: ${c.field}`,
+                  text: `Corrected: this first said ${num(c.model)}. The real number, recounted from the calls, is ${num(c.server)}.` })),
       state.dev && claim.model_n !== claim.verified_n
         ? el("p", { class: "devonly footnote", text: `model_n ${claim.model_n} · server_n ${claim.verified_n}` }) : null,
     ]);

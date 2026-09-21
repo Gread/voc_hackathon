@@ -87,9 +87,15 @@ export function bar(fraction, tone = "") {
   return el("div", { class: `bar ${tone}` }, [el("span", { style: `width:${width.toFixed(1)}%` })]);
 }
 
+// The server's own badge string ("broad pattern · 10,126 calls · 25 months · 11 products ·
+// 54 states") is built for an analyst auditing the evidence, not a first-time viewer reading a
+// pill at a glance. The tier name alone (from the same tier key CSS already colors by) reads in
+// one glance; the full detail survives as a tooltip for anyone who wants to check it.
 export function badge(confidence) {
   if (!confidence) return el("span", { class: "badge", text: "no support" });
-  return el("span", { class: `badge ${esc(confidence.tier || "")}`, text: confidence.badge || confidence.tier || "" });
+  const tier = confidence.tier || "";
+  return el("span", { class: `badge ${esc(tier)}`, text: label(tier) || confidence.badge || "",
+                      title: confidence.badge || "" });
 }
 
 export function statusPill(status) {
