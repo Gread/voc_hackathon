@@ -3,7 +3,7 @@
 import { askStream, api } from "./api.js";
 import { openCall, openCallList } from "./calldrawer.js";
 import { openTheme } from "./themecard.js";
-import { badge, clear, el, esc, label, markdown, num } from "./format.js";
+import { badge, clear, el, esc, label, markdown, num, plural } from "./format.js";
 import { queryParams, state } from "./state.js";
 import { barsChart, trendChart } from "./charts.js";
 
@@ -16,6 +16,18 @@ const out = () => document.getElementById("askOutput");
 function traceBox() {
   return el("div", { class: "trace", id: "askTrace" });
 }
+
+// The tool name is the system's own vocabulary. A judge reading the trace over someone's shoulder
+// should see what was checked, not the function that checked it.
+const TOOL_LABELS = {
+  get_overview: "Read the overview numbers", contact_reasons: "Checked contact reasons",
+  list_themes: "Listed themes", theme_detail: "Looked at a theme in detail",
+  theme_trend: "Checked a theme's trend over time", emerging_themes: "Checked what's emerging",
+  sentiment_drivers: "Checked what drives sentiment", breakdown: "Broke the numbers down",
+  compare: "Compared two groups", get_quotes: "Pulled supporting quotes",
+  search_calls: "Searched the calls", get_call: "Opened one call", submit_answer: "Wrote the answer",
+};
+const toolLabel = (name) => TOOL_LABELS[name] || label(name || "tool");
 
 function renderChart(chart, results) {
   const source = results[chart.result_id];
@@ -41,8 +53,16 @@ function renderChart(chart, results) {
   return el("div", {}, [el("p", { class: "row-meta", text: chart.title || "" }), wrap]);
 }
 
-function renderAnswer(answer, results) {
+function renderAnswer(answer, results, trace, toolCalls) {
   const node = clear(out());
+  if (trace) {
+    // Collapsed, not gone: how the answer was reached stays one click away instead of
+    // disappearing the moment the answer itself is ready to read.
+    node.appendChild(el("details", { class: "trace-summary" }, [
+      el("summary", { text: `How this answer was reached · ${plural(toolCalls, "tool call")}` }),
+      trace,
+    ]));
+  }
   const modeText = answer.mode === "recorded"
     ? `recorded run${answer.recorded_question && answer.recorded_question !== answer.question ? ` · matched to "${answer.recorded_question}"` : ""}`
     : answer.mode === "templated" ? "templated (no model)" : `live · ${answer.model || ""}`;
@@ -123,7 +143,10 @@ export async function ask(question, { fresh = false } = {}) {
   node.appendChild(trace);
   const results = {};
   let answered = false;
+  let toolCalls = 0;
   const deltaNode = el("div", { class: "answer-md" });
+  const status = document.getElementById("askStatus");
+  if (status) status.textContent = "Reading your question…";
 
   const addTrace = (text, extra = null) => {
     const line = el("div", { text });
@@ -138,7 +161,13 @@ export async function ask(question, { fresh = false } = {}) {
     await askStream({ question, filters: queryParams(), as_of: state.asOf || null, fresh }, (name, payload) => {
       if (name === "status") { if (payload.qhash) answerQhash = payload.qhash; addTrace(`· ${payload.text ?? ""}`); }
       else if (name === "thinking") addTrace(`· thinking: ${(payload.text ?? "").slice(0, 120)}`);
-      else if (name === "tool_call") addTrace(`→ ${payload.name}(${JSON.stringify(payload.args ?? {}).slice(0, 110)})`);
+      else if (name === "tool_call") {
+        toolCalls++;
+        // The tool's own arguments are debugging detail, not something a demo audience reads -
+        // shown only in ?dev=1, same rule the validation report and model/server diffs already use.
+        addTrace(`→ ${toolLabel(payload.name)}`,
+                 state.dev ? el("pre", { text: JSON.stringify(payload.args ?? {}, null, 1) }) : null);
+      }
       else if (name === "tool_result") {
         results[payload.result_id] = { rows: [] };
         const details = el("details", {}, [
@@ -155,7 +184,8 @@ export async function ask(question, { fresh = false } = {}) {
       } else if (name === "answer") {
         answered = true;
         answerQhash = payload.answer?.result_qhash || answerQhash;
-        renderAnswer({ ...payload.answer, question }, results);
+        renderAnswer({ ...payload.answer, question }, results, trace, toolCalls);
+        if (status) status.textContent = "Answer ready.";
       } else if (name === "error") {
         addTrace(`! ${payload.message ?? "error"}`);
       }
