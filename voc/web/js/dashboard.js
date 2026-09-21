@@ -5,9 +5,10 @@ import { openCall, openCallList } from "./calldrawer.js";
 import { openTheme } from "./themecard.js";
 import { attachChartTable, bar, clear, el, label, num, pct, pctOf, plural, shortDate, signed, statusPill, truncate } from "./format.js";
 import { queryParams, state } from "./state.js";
-import { seriesToTable, sparkline, trendChart } from "./charts.js";
+import { donutChart, seriesToTable, sparkline, trendChart } from "./charts.js";
 
 let driverPolarity = "negative";
+let reasonsView = "ranked";
 let lastTrendIds = [];
 
 function panel(id) { return document.getElementById(id); }
@@ -62,6 +63,23 @@ export async function renderReasons() {
       out.appendChild(el("p", { class: "footnote", text:
         "Share of all contacts in view. There is no earlier period in this data to compare against." }));
     }
+
+    // Share view: the mix as a whole. Ranking stays with the bars, so this is a second view of
+    // the same rows rather than a replacement.
+    if (reasonsView === "share") {
+      const canvas = el("canvas", { id: "reasonsDonut" });
+      out.appendChild(el("div", { class: "donut-box" }, [canvas]));
+      const donutRows = rows.map((r) => ({ label: label(r.label || r.reason), value: Number(r.n_calls) || 0 }));
+      setTimeout(() => donutChart("reasonsDonut", donutRows), 0);
+      if (payload.result_id) {
+        out.appendChild(el("p", { class: "footnote" }, [
+          callsLink(payload.result_id, `${num(payload.n_call_ids ?? 0)} calls carry a contact reason`,
+                    "Calls with a contact reason"),
+        ]));
+      }
+      return;
+    }
+
     for (const row of rows) {
       // A delta needs a comparable previous period; without one only the trend direction is meaningful.
       const comparable = Number(row.n_previous) > 0;
@@ -266,6 +284,14 @@ export function initDashboard() {
       setActiveTab("#panelDrivers .tab", tab);
       driverPolarity = tab.dataset.polarity;
       renderDrivers();
+    });
+  }
+  for (const tab of document.querySelectorAll("#reasonsView .tab")) {
+    tab.setAttribute("aria-pressed", String(tab.classList.contains("active")));
+    tab.addEventListener("click", () => {
+      setActiveTab("#reasonsView .tab", tab);
+      reasonsView = tab.dataset.view;
+      renderReasons();
     });
   }
   for (const tab of document.querySelectorAll("#trendGrain .tab")) {

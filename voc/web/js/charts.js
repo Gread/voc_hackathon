@@ -106,6 +106,54 @@ export function barsChart(canvasId, rows, { horizontal = true, tone = "brand" } 
   });
 }
 
+/** Composition of contact reasons as a doughnut: the one question here that is genuinely
+ *  parts-of-a-whole ("what is the mix?"), which a ranked bar list answers less directly.
+ *
+ *  Ranking still belongs to the bars - angles are hard to compare - so this sits beside them
+ *  rather than replacing them. Long tails are collapsed into one "Other" slice, because a
+ *  doughnut with fifteen slivers reads as decoration.
+ *
+ *  Monochrome blue ramp rather than a rainbow: the categories have no inherent colour meaning,
+ *  and a ramp keeps it on brand and readable for anyone who can't separate hues.
+ */
+const RAMP = ["#00315c", "#00427a", "#005aa0", "#3d87bd", "#7fb3d9", "#b6d7ee"];
+
+export function donutChart(canvasId, rows, { top = 6 } = {}) {
+  const sorted = [...rows].sort((a, b) => (b.value || 0) - (a.value || 0));
+  const head = sorted.slice(0, top);
+  const tail = sorted.slice(top);
+  const tailTotal = tail.reduce((sum, r) => sum + (Number(r.value) || 0), 0);
+  const labels = head.map((r) => r.label);
+  const values = head.map((r) => Number(r.value) || 0);
+  if (tailTotal > 0) { labels.push(`Other (${tail.length})`); values.push(tailTotal); }
+  const colors = labels.map((_, i) => (tailTotal > 0 && i === labels.length - 1
+    ? cssVar("--neutral", "#7a7a7a") : RAMP[i % RAMP.length]));
+  const total = values.reduce((a, b) => a + b, 0) || 1;
+
+  return render(canvasId, {
+    type: "doughnut",
+    data: { labels, datasets: [{ data: values, backgroundColor: colors, borderColor: cssVar("--panel", "#fff"), borderWidth: 2 }] },
+    options: {
+      responsive: true, maintainAspectRatio: false, cutout: "58%",
+      animation: { duration: 500 },
+      plugins: {
+        legend: {
+          position: "right",
+          labels: { color: cssVar("--ink", "#292929"), boxWidth: 12, padding: 10, font: { size: 12 } },
+        },
+        tooltip: {
+          backgroundColor: cssVar("--panel", "#fff"), titleColor: cssVar("--ink", "#000"),
+          bodyColor: cssVar("--ink-soft", "#666"), borderColor: cssVar("--line", "#d6d6d6"), borderWidth: 1,
+          callbacks: {
+            label: (ctx) => `${ctx.label}: ${ctx.parsed.toLocaleString("en-US")} calls `
+              + `(${((ctx.parsed / total) * 100).toFixed(1)}%)`,
+          },
+        },
+      },
+    },
+  });
+}
+
 /** A theme's own trajectory as an inline SVG sparkline, for the Emerging panel.
  *
  *  It replaces a bar that couldn't say anything: that bar was scaled against the largest row, so

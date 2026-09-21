@@ -10,6 +10,7 @@ import { initNav } from "./js/nav.js";
 import { clear, el, esc, label, num, pct } from "./js/format.js";
 import { clearFilters, onChange, queryParams, readURL, setAsOf, setFilter, state } from "./js/state.js";
 import { initThemeCard } from "./js/themecard.js";
+import { downloadReport } from "./js/report.js";
 
 let meta = null;
 
@@ -281,6 +282,8 @@ async function boot() {
     input.addEventListener("change", () => { setFilter(key, input.value); renderFilterSummary(); });
   }
   document.getElementById("aboutBtn").addEventListener("click", aboutModal);
+  const reportBtn = document.getElementById("downloadReport");
+  reportBtn.addEventListener("click", () => downloadReport(reportBtn));
 
   try {
     meta = await api.meta();
