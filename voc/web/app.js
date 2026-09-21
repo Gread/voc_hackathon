@@ -139,6 +139,37 @@ function pipelineStrip() {
   document.getElementById("pipelineStrip").textContent = bits.join(" · ");
 }
 
+/** The first thing a first-time viewer - a judge, not an analyst - sees on Overview. The rail strip
+ *  above already carries the same numbers for anyone who's used the tool before; this says what they
+ *  mean, once, in plain sentences, so nobody needs the glossary to read the panels below it. */
+function renderHero() {
+  const counts = meta.counts || {};
+  const qa = meta.qa || {};
+  const sources = meta.sources || [];
+  const strip = document.getElementById("heroStrip");
+  if (!counts.n_calls) { strip.hidden = true; return; }
+  strip.hidden = false;
+
+  const kinds = [...new Set(sources.map((s) => s.kind))];
+  const corpusPhrase = kinds.includes("real") && kinds.includes("synthetic")
+    ? "real written complaints and synthetic call transcripts"
+    : kinds.includes("synthetic") ? "synthetic call transcripts" : "real written complaints";
+  document.getElementById("heroLine").textContent =
+    `${num(counts.n_calls)} customer contacts - ${corpusPhrase} - read once each and grouped into `
+    + `${num(counts.n_themes)} themes.`;
+
+  const stats = [
+    [num(counts.n_calls), "contacts read"],
+    [num(counts.n_themes), `themes, from ${num(counts.n_topics)} topics`],
+    [qa.quote_verify_rate != null ? pct(qa.quote_verify_rate) : "-", "quotes verify word-for-word"],
+    [qa.reason_agreement != null ? pct(qa.reason_agreement) : "-", "match the bank's own category, read blind"],
+  ];
+  const wrap = clear(document.getElementById("heroStats"));
+  for (const [value, caption] of stats) {
+    wrap.appendChild(el("div", { class: "hero-stat" }, [el("strong", { text: value }), el("span", { text: caption })]));
+  }
+}
+
 function aboutModal() {
   const node = document.getElementById("modal");
   const body = clear(document.getElementById("modalBody"));
@@ -169,7 +200,9 @@ function aboutModal() {
   body.appendChild(el("p", { class: "footnote", text:
     "Dates are when the regulator received the complaint, which lags the underlying contact. " +
     "Redactions such as XXXX are the regulator's and are kept verbatim in every quote. " +
-    "No synthetic or planted records are used anywhere in this dataset." }));
+    "Written complaints are real; call transcripts are synthetic and labelled SYNTHETIC everywhere " +
+    "they appear. Nothing is fabricated to fit a narrative - the corpus picker on the left always " +
+    "says which kind a number covers." }));
 }
 
 async function boot() {
@@ -203,6 +236,7 @@ async function boot() {
   }
   modeBadge();
   pipelineStrip();
+  renderHero();
   if (!state.asOf && meta.as_of_week) state.asOf = meta.as_of_week;
   setupAsOf(meta.as_of_weeks || []);
   setupSources(meta.sources || []);
