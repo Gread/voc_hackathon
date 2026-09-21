@@ -184,16 +184,18 @@ function modeBadge() {
     : "Recorded answers replay real tool runs; with an API key the agent answers live";
 }
 
+/** Two figures as aligned label/value pairs rather than a run-on sentence. As dot-separated prose
+ *  this wrapped to three ragged lines in a 244px rail and read as a caption nobody parses; the
+ *  quality metrics it used to carry are on the Overview hero and in About this data, in full. */
 function pipelineStrip() {
   const counts = meta.counts || {};
-  const qa = meta.qa || {};
-  const bits = [
-    `${num(counts.n_calls)} calls`, `${num(counts.n_topics)} topics`, `${num(counts.n_themes)} themes`,
-  ];
-  // Two facts, not four: at 12px in a 244px rail, the label-agreement figure pushed this strip to
-  // four wrapped lines. It still appears in full on the Overview hero and in About this data.
-  if (qa.quote_verify_rate) bits.push(`${pct(qa.quote_verify_rate)} of quotes verified`);
-  document.getElementById("pipelineStrip").textContent = bits.join(" · ");
+  const strip = clear(document.getElementById("pipelineStrip"));
+  for (const [value, name] of [[num(counts.n_calls), "contacts"], [num(counts.n_themes), "themes"]]) {
+    strip.appendChild(el("span", { class: "rail-stat" }, [
+      el("strong", { text: value }),
+      el("span", { text: name }),
+    ]));
+  }
 }
 
 /** The first thing a first-time viewer - a judge, not an analyst - sees on Overview. The rail strip
