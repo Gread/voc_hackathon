@@ -2,6 +2,7 @@
 
 import { api } from "./api.js";
 import { openCall, openCallList } from "./calldrawer.js";
+import { closeOverlay, openOverlay } from "./dialog.js";
 import { clear, el, label, num, pct, plural, shortDate, statusPill } from "./format.js";
 import { queryParams } from "./state.js";
 import { trendChart } from "./charts.js";
@@ -9,7 +10,7 @@ import { trendChart } from "./charts.js";
 const modal = () => document.getElementById("modal");
 const body = () => document.getElementById("modalBody");
 
-export function closeModal() { modal().hidden = true; }
+export function closeModal() { closeOverlay(modal()); }
 
 export function initThemeCard() {
   document.getElementById("modalClose").addEventListener("click", closeModal);
@@ -54,14 +55,16 @@ function breakdownTabs(container, themeId) {
     }
   };
   for (const [dim, name] of dims) {
-    const btn = el("button", { class: "tab", text: name, type: "button", onclick: () => {
-      for (const t of tabs.children) t.classList.remove("active");
+    const btn = el("button", { class: "tab", text: name, type: "button", "aria-pressed": "false", onclick: () => {
+      for (const t of tabs.children) { t.classList.remove("active"); t.setAttribute("aria-pressed", "false"); }
       btn.classList.add("active");
+      btn.setAttribute("aria-pressed", "true");
       load(dim);
     } });
     tabs.appendChild(btn);
   }
   tabs.firstChild.classList.add("active");
+  tabs.firstChild.setAttribute("aria-pressed", "true");
   container.appendChild(tabs);
   container.appendChild(target);
   load("product");
@@ -69,7 +72,7 @@ function breakdownTabs(container, themeId) {
 
 export async function openTheme(themeId) {
   const node = modal();
-  node.hidden = false;
+  openOverlay(node, body());
   clear(body()).appendChild(el("p", { class: "muted", text: "loading theme…" }));
   let payload;
   try {

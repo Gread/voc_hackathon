@@ -12,6 +12,16 @@ let lastTrendIds = [];
 
 function panel(id) { return document.getElementById(id); }
 
+/** Toggling a class is invisible to a screen reader; aria-pressed says which tab is active in
+ *  words, not just colour. */
+function setActiveTab(groupSelector, active) {
+  for (const t of document.querySelectorAll(groupSelector)) {
+    const on = t === active;
+    t.classList.toggle("active", on);
+    t.setAttribute("aria-pressed", String(on));
+  }
+}
+
 function failed(node, err) {
   clear(node).appendChild(el("p", { class: "muted", text: `could not load: ${err.message}` }));
 }
@@ -190,17 +200,17 @@ export async function renderTrend(entityIds = null) {
 
 export function initDashboard() {
   for (const tab of document.querySelectorAll("#panelDrivers .tab")) {
+    tab.setAttribute("aria-pressed", String(tab.classList.contains("active")));
     tab.addEventListener("click", () => {
-      for (const t of document.querySelectorAll("#panelDrivers .tab")) t.classList.remove("active");
-      tab.classList.add("active");
+      setActiveTab("#panelDrivers .tab", tab);
       driverPolarity = tab.dataset.polarity;
       renderDrivers();
     });
   }
   for (const tab of document.querySelectorAll("#trendGrain .tab")) {
+    tab.setAttribute("aria-pressed", String(tab.classList.contains("active")));
     tab.addEventListener("click", () => {
-      for (const t of document.querySelectorAll("#trendGrain .tab")) t.classList.remove("active");
-      tab.classList.add("active");
+      setActiveTab("#trendGrain .tab", tab);
       trendGrain = tab.dataset.grain;
       renderTrend(lastTrendIds.length ? lastTrendIds : null);
     });
