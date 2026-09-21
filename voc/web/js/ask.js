@@ -43,27 +43,41 @@ function notice(kind, title, body) {
   });
 }
 
+/** Decide what can honestly be drawn BEFORE reserving space for it.
+ *
+ *  This used to append the box first and fill it inside a setTimeout, which meant that whenever the
+ *  data didn't support a chart the answer was left with an empty 190px rectangle under it - two of
+ *  them, on the first demo question. /api/results/{id}/rows answers with the calls behind a result
+ *  (Q.call_list, capped at 200), not the tool's own aggregate rows, so a trend's per-period series
+ *  simply isn't in there to plot. Drawing one anyway from a capped sample of calls would be a chart
+ *  that lies, which is the one thing this product exists not to do, so it draws only what the rows
+ *  actually carry and renders nothing at all otherwise. */
 function renderChart(chart, results) {
   const source = results[chart.result_id];
   if (!source) return null;
   const rows = source.rows || [];
+
+  let draw = null;
+  if (chart.kind === "trend") {
+    const series = rows.map((r) => ({
+      label: r.name || r.entity_id || chart.series_key,
+      points: (r.series || r.points || []).map((p) => ({ period: p.period, share: p.share, n_calls: p.n_calls })),
+    })).filter((s) => s.points.length);
+    if (series.length) draw = (id) => trendChart(id, series, { valueKey: "share" });
+  } else {
+    const bars = rows.slice(0, 8).map((r) => ({
+      label: label(r.name || r.label || r.value || r.key || r.reason || ""),
+      value: Number(r.n_calls ?? r.n_recent ?? r.n ?? 0),
+    })).filter((b) => b.label && b.value > 0);
+    if (bars.length) draw = (id) => barsChart(id, bars);
+  }
+  if (!draw) return null;
+
   const id = `askChart${++chartSeq}`;
-  const wrap = el("div", { style: "height:190px;margin:8px 0" }, [el("canvas", { id, height: "150" })]);
-  setTimeout(() => {
-    if (chart.kind === "trend") {
-      const series = rows.map((r) => ({
-        label: r.name || r.entity_id || chart.series_key,
-        points: (r.series || r.points || []).map((p) => ({ period: p.period, share: p.share, n_calls: p.n_calls })),
-      })).filter((s) => s.points.length);
-      if (series.length) trendChart(id, series, { valueKey: "share" });
-    } else {
-      const bars = rows.slice(0, 8).map((r) => ({
-        label: label(r.name || r.label || r.value || r.key || r.reason || ""),
-        value: Number(r.n_calls ?? r.n_recent ?? r.n ?? 0),
-      })).filter((b) => b.label);
-      if (bars.length) barsChart(id, bars);
-    }
-  }, 0);
+  // .chart-box, not a one-off inline height: an answer's chart is the same box the dashboard's
+  // panels use, and it had drifted from it.
+  const wrap = el("div", { class: "chart-box", style: "margin:8px 0" }, [el("canvas", { id })]);
+  setTimeout(() => draw(id), 0);
   return el("div", {}, [el("p", { class: "row-meta", text: chart.title || "" }), wrap]);
 }
 
@@ -223,7 +237,20 @@ export function initAsk(questions) {
     if (q) ask(q);
   });
   const chips = clear(document.getElementById("questionChips"));
-  for (const q of questions || []) {
-    chips.appendChild(el("button", { type: "button", text: q.question, title: q.question, onclick: () => ask(q.question) }));
-  }
+  const heading = document.getElementById("questionChipsLabel");
+  if (heading) heading.hidden = !(questions || []).length;
+  // Each briefing question already carries a short alias in questions/demo.yaml ("Top contact
+  // reasons" for "What are customers contacting us about most, and what is changing?"). The card
+  // leads with that and keeps the exact briefing wording underneath, so the grid is scannable
+  // without paraphrasing the bank's own questions away. No alias means no second line.
+  (questions || []).forEach((q, i) => {
+    const short = (q.aliases || [])[0] || q.question;
+    chips.appendChild(el("button", {
+      type: "button", class: "q-card", title: q.question, style: `--i:${i}`,
+      onclick: () => ask(q.question),
+    }, [
+      el("span", { class: "q-label", text: short }),
+      short === q.question ? null : el("span", { class: "q-full", text: q.question }),
+    ]));
+  });
 }
