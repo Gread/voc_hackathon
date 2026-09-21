@@ -90,7 +90,7 @@ function radiusFor(nCalls) {
  *  A week with no calls for a theme shrinks it to the floor rather than hiding it: an empty week is
  *  information, and a sphere that vanishes reads as a rendering fault.
  */
-function playback(nodes, meshes, T, payload) {
+function playback(nodes, meshes, tubes, T, payload) {
   const row = document.getElementById("graphPlay");
   const weeks = (payload.data || {}).weeks || [];
   if (weeks.length < 2) { row.hidden = true; return null; }
@@ -133,6 +133,20 @@ function playback(nodes, meshes, T, payload) {
   // double, which is a seven-fold swing you can actually watch.
   const scaleFor = (n) => 0.25 + 1.45 * Math.sqrt(Math.min(n, cap) / cap);
 
+  // Sizing by raw volume barely reorders anything: the 366-call theme is large every week and the
+  // 30-call one is small every week, so the picture that moves least is the one you are watching for
+  // movement. Against its own normal, every theme sits near the same middling size when it is
+  // behaving, and only the ones running hot or cold change - which is the question the view is for,
+  // and the same question the orange flags answer. The reference is the theme's median active
+  // window, so one quiet spell does not redefine what normal means for it.
+  const ref = {};
+  for (const n of nodes) {
+    const active = win.get(n.theme_id).filter((v) => v > 0).sort((a, b) => a - b);
+    ref[n.theme_id] = active.length ? Math.max(1, active[Math.floor(active.length / 2)]) : 1;
+  }
+  const relativeFor = (n, id) => 0.22 + 0.62 * Math.min(n / ref[id], 3);
+
+  const modeSel = document.getElementById("playMode");
   const flags = (payload.data || {}).flags || {};
 
   const range = document.getElementById("weekRange");
@@ -142,22 +156,29 @@ function playback(nodes, meshes, T, payload) {
   row.hidden = false;
 
   let timer = null;
+  let current = -1;            // -1 is the whole corpus; the mode switch has to know which
 
   const show = (idx) => {
+    current = idx;
     const whole = idx < 0;
     const week = whole ? null : weeks[idx];
     const hot = new Set((flags[week] || []).map((f) => f.theme_id));
+    const relative = modeSel.value === "relative";
     let shown = 0;
     for (const n of nodes) {
       const mesh = meshes[n.theme_id];
       if (!mesh) continue;
       const seen = whole ? 0 : win.get(n.theme_id)[idx];
       shown += seen;
-      mesh.scale.setScalar(whole ? 1 : scaleFor(seen));
+      mesh.scale.setScalar(whole ? 1 : (relative ? relativeFor(seen, n.theme_id) : scaleFor(seen)));
       // Orange is the one colour not in the sentiment scale, so a flag cannot be read as a mood.
       mesh.material.emissive = new T.Color(!whole && hot.has(n.theme_id) ? 0xff7a1a : 0x000000);
       mesh.material.emissiveIntensity = 0.9;
     }
+    // The links are drawn at all-time weight. Left at that while the spheres shrink they hold the
+    // eye and the motion is lost behind them, so they step back for the weeks and return for the whole.
+    for (const t of tubes) t.material.opacity = whole ? 0.28 : 0.08;
+
     label.textContent = whole ? "All time"
       : `${week} · ${num(shown)} in 4 wks${hot.size ? ` · ${hot.size} above baseline` : ""}`;
     label.classList.toggle("hot", !whole && hot.size > 0);
@@ -174,6 +195,8 @@ function playback(nodes, meshes, T, payload) {
     }, 260);
   };
   range.oninput = () => { stop(); show(Number(range.value)); };
+  // Redraw in place rather than resetting: switching what size means should not lose your week.
+  modeSel.onchange = () => show(current);
   document.getElementById("weekAll").onclick = () => { stop(); show(-1); };
 
   show(-1);
@@ -561,7 +584,8 @@ async function build() {
 
   // Fetched after the scene is up so the graph draws immediately and playback arrives when ready.
   try {
-    scene.stopPlay = playback(nodes, meshes, T, await api.graphWeeks(queryParams(), { limit: LIMIT }));
+    scene.stopPlay = playback(nodes, meshes, tubes, T,
+                              await api.graphWeeks(queryParams(), { limit: LIMIT }));
   } catch {
     document.getElementById("graphPlay").hidden = true;   // no playback is fine; a broken graph is not
   }
