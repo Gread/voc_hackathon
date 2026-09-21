@@ -106,6 +106,49 @@ export function barsChart(canvasId, rows, { horizontal = true, tone = "brand" } 
   });
 }
 
+/** A theme's own trajectory as an inline SVG sparkline, for the Emerging panel.
+ *
+ *  It replaces a bar that couldn't say anything: that bar was scaled against the largest row, so
+ *  when every emerging theme sat at 5 calls, every bar rendered full width. A line shows the shape
+ *  the emerging score is actually reacting to - flat for months, then a climb - which is the one
+ *  thing a reader needs to see without being taught the statistics.
+ *
+ *  Inline SVG rather than Chart.js: there are one of these per row, they carry no axes or
+ *  interaction, and an <svg> costs no canvas, no instance to destroy, and stays crisp when zoomed.
+ */
+export function sparkline(points, { weeks = 26, recent = 4, width = 900, height = 64 } = {}) {
+  const tail = points.slice(-weeks);
+  const values = tail.map((p) => Number(p.n_calls) || 0);
+  const max = Math.max(1, ...values);
+  const stepX = tail.length > 1 ? width / (tail.length - 1) : width;
+  const pad = 4;
+  const y = (v) => pad + (height - pad * 2) * (1 - v / max);
+  const xy = values.map((v, i) => [i * stepX, y(v)]);
+  const path = xy.map(([x, yy], i) => `${i ? "L" : "M"}${x.toFixed(1)},${yy.toFixed(1)}`).join(" ");
+  const splitAt = Math.max(0, xy.length - recent - 1);
+  const recentPath = xy.slice(splitAt).map(([x, yy], i) => `${i ? "L" : "M"}${x.toFixed(1)},${yy.toFixed(1)}`).join(" ");
+  const area = `${path} L${width},${height} L0,${height} Z`;
+  const last = xy[xy.length - 1] || [0, height];
+  const firstWeek = tail[0]?.period ?? "";
+  const lastWeek = tail[tail.length - 1]?.period ?? "";
+  const peak = Math.max(...values);
+
+  const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+  svg.setAttribute("viewBox", `0 0 ${width} ${height}`);
+  svg.setAttribute("width", String(width));
+  svg.setAttribute("height", String(height));
+  svg.setAttribute("class", "sparkline");
+  svg.setAttribute("role", "img");
+  svg.setAttribute("aria-label",
+    `Weekly calls from ${firstWeek} to ${lastWeek}, peaking at ${peak}. The last ${recent} weeks are highlighted.`);
+  svg.innerHTML =
+    `<path d="${area}" fill="var(--brand-soft)"></path>` +
+    `<path class="spark-line" d="${path}" fill="none" stroke="var(--neutral)" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"></path>` +
+    `<path class="spark-recent" d="${recentPath}" fill="none" stroke="var(--neg)" stroke-width="3.5" stroke-linejoin="round" stroke-linecap="round"></path>` +
+    `<circle class="spark-dot" cx="${last[0].toFixed(1)}" cy="${last[1].toFixed(1)}" r="4.5" fill="var(--neg)"></circle>`;
+  return svg;
+}
+
 /** The same pivot trendChart() does internally, exposed so a text table can show exactly what the
  *  canvas draws - Chart.js renders to a bitmap, invisible to assistive tech and with no fallback
  *  content of its own, so the table is the honest alternative rather than a decorative extra. */

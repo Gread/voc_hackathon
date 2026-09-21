@@ -5,7 +5,7 @@ import { openCall, openCallList } from "./calldrawer.js";
 import { openTheme } from "./themecard.js";
 import { attachChartTable, bar, clear, el, label, num, pct, pctOf, plural, shortDate, signed, statusPill, truncate } from "./format.js";
 import { queryParams, state } from "./state.js";
-import { seriesToTable, trendChart } from "./charts.js";
+import { seriesToTable, sparkline, trendChart } from "./charts.js";
 
 let driverPolarity = "negative";
 let lastTrendIds = [];
@@ -146,6 +146,16 @@ export async function renderEmerging() {
     if (!rows.length) {
       out.appendChild(el("p", { class: "muted", text: `no theme passed the threshold at ${payload.as_of_week || "this week"}` }));
     }
+    // One weekly-trend call covers the whole panel; the endpoint takes six entity ids at a time.
+    // A failure here costs the sparklines and nothing else, so the panel still renders without it.
+    const ids = rows.map((r) => r.theme_id).filter(Boolean).slice(0, 6);
+    let seriesById = {};
+    if (ids.length) {
+      try {
+        const trend = await api.trend(ids, "week", queryParams());
+        seriesById = Object.fromEntries((trend.rows || []).map((r) => [r.entity_id, r.series || []]));
+      } catch { /* sparklines are an enhancement, never a dependency */ }
+    }
     for (const row of rows) {
       const recent = Number(row.n_recent) || 0;
       const expected = Number(row.expected_recent ?? 0);
@@ -166,7 +176,12 @@ export async function renderEmerging() {
           text: `First seen ${row.first_seen_week || "?"}`
           + (row.robust_8w ? " · confirmed over 8 weeks, not just 4" : "")
           + (row.novel_vocabulary ? " · wording not seen before" : "") }),
-        bar(Math.min(1, recent / Math.max(5, ...rows.map((r) => r.n_recent || 0))), "neg"),
+        (seriesById[row.theme_id] || []).length
+          ? el("div", { class: "spark-wrap" }, [
+              sparkline(seriesById[row.theme_id]),
+              el("span", { class: "spark-caption", text: "weekly calls, last 6 months · red = the last 4 weeks" }),
+            ])
+          : bar(Math.min(1, recent / Math.max(5, ...rows.map((r) => r.n_recent || 0))), "neg"),
       ]));
     }
     if (data.expected_false_positives !== undefined && data.expected_false_positives !== null) {
