@@ -95,14 +95,45 @@ function playback(nodes, meshes, T, payload) {
   const weeks = (payload.data || {}).weeks || [];
   if (weeks.length < 2) { row.hidden = true; return null; }
 
-  const counts = new Map();                       // week -> Map(theme_id -> n_calls)
+  const at = new Map();                           // theme_id -> Map(week index -> n_calls)
+  const wi = new Map(weeks.map((w, i) => [w, i]));
   for (const r of payload.rows || []) {
-    if (!counts.has(r.week)) counts.set(r.week, new Map());
-    counts.get(r.week).set(r.theme_id, r.n_calls);
+    if (!at.has(r.theme_id)) at.set(r.theme_id, new Map());
+    at.get(r.theme_id).set(wi.get(r.week), r.n_calls);
   }
+
+  // A trailing four-week window, not the single week. Two reasons, and the second is the real one:
+  // a theme sees a median of 2 calls in a week, which is mostly noise, and four weeks is exactly the
+  // n_recent the emerging scores are computed over. When a sphere lights up for "5 calls where 0.83
+  // were expected", it should be showing the same window that number was measured on.
+  const WINDOW = 4;
+  const win = new Map();                          // theme_id -> array by week index
+  const all = [];
+  for (const n of nodes) {
+    const series = at.get(n.theme_id) || new Map();
+    const out = new Array(weeks.length);
+    for (let i = 0; i < weeks.length; i++) {
+      let s = 0;
+      for (let j = Math.max(0, i - WINDOW + 1); j <= i; j++) s += series.get(j) || 0;
+      out[i] = s;
+      all.push(s);
+    }
+    win.set(n.theme_id, out);
+  }
+
+  // Scale against the 95th percentile, not the maximum: the busiest window is 357 against a p95 of
+  // 16, and normalising to that outlier would flatten every ordinary week into the same small dot.
+  // Anything above the cap simply pegs at full size.
+  all.sort((a, b) => a - b);
+  const cap = Math.max(4, all[Math.floor(all.length * 0.95)] || 4);
+
+  // radiusFor is built for all-time counts, where its 2.6 floor is a small part of a radius of 9.
+  // At weekly counts that floor is nearly all of it, so a busy week differed from a dead one by 7%
+  // of the radius - invisible. This spans the weekly range instead, from a quarter size to nearly
+  // double, which is a seven-fold swing you can actually watch.
+  const scaleFor = (n) => 0.25 + 1.45 * Math.sqrt(Math.min(n, cap) / cap);
+
   const flags = (payload.data || {}).flags || {};
-  const base = {};
-  for (const n of nodes) base[n.theme_id] = radiusFor(n.n_calls);
 
   const range = document.getElementById("weekRange");
   const label = document.getElementById("weekLabel");
@@ -113,22 +144,23 @@ function playback(nodes, meshes, T, payload) {
   let timer = null;
 
   const show = (idx) => {
-    const all = idx < 0;
-    const week = all ? null : weeks[idx];
+    const whole = idx < 0;
+    const week = whole ? null : weeks[idx];
     const hot = new Set((flags[week] || []).map((f) => f.theme_id));
-    const seen = counts.get(week) || new Map();
+    let shown = 0;
     for (const n of nodes) {
       const mesh = meshes[n.theme_id];
       if (!mesh) continue;
-      mesh.scale.setScalar(all ? 1 : radiusFor(seen.get(n.theme_id) || 0) / base[n.theme_id]);
+      const seen = whole ? 0 : win.get(n.theme_id)[idx];
+      shown += seen;
+      mesh.scale.setScalar(whole ? 1 : scaleFor(seen));
       // Orange is the one colour not in the sentiment scale, so a flag cannot be read as a mood.
-      mesh.material.emissive = new T.Color(!all && hot.has(n.theme_id) ? 0xff7a1a : 0x000000);
-      mesh.material.emissiveIntensity = 0.85;
+      mesh.material.emissive = new T.Color(!whole && hot.has(n.theme_id) ? 0xff7a1a : 0x000000);
+      mesh.material.emissiveIntensity = 0.9;
     }
-    const n_hot = hot.size;
-    label.textContent = all ? "All time"
-      : `${week}${n_hot ? ` · ${n_hot} above baseline` : ""}`;
-    label.classList.toggle("hot", !all && n_hot > 0);
+    label.textContent = whole ? "All time"
+      : `${week} · ${num(shown)} in 4 wks${hot.size ? ` · ${hot.size} above baseline` : ""}`;
+    label.classList.toggle("hot", !whole && hot.size > 0);
   };
 
   const stop = () => { window.clearInterval(timer); timer = null; playBtn.textContent = "▶"; };
