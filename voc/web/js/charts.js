@@ -8,7 +8,9 @@ function cssVar(name, fallback) {
 }
 
 function palette() {
-  return [cssVar("--accent", "#b4530a"), cssVar("--neg", "#a8322a"), cssVar("--pos", "#2f6b46"),
+  // --accent was never a defined token (styles.css only has --brand), so every trend line's first
+  // series silently fell back to this hardcoded orange instead of the bank's own brand colour.
+  return [cssVar("--brand", "#005aa0"), cssVar("--neg", "#a8322a"), cssVar("--pos", "#2f6b46"),
           "#6b6ba8", "#a87f2f", "#3f7f8a"];
 }
 
@@ -88,8 +90,8 @@ export function trendChart(canvasId, series, { asOf = null, valueKey = "share" }
 }
 
 /** rows: [{label, value, n}] */
-export function barsChart(canvasId, rows, { horizontal = true, tone = "accent" } = {}) {
-  const color = cssVar(`--${tone}`, "#b4530a");
+export function barsChart(canvasId, rows, { horizontal = true, tone = "brand" } = {}) {
+  const color = cssVar(`--${tone}`, "#005aa0");
   return render(canvasId, {
     type: "bar",
     data: {

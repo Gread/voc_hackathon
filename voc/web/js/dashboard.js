@@ -3,7 +3,7 @@
 import { api } from "./api.js";
 import { openCall, openCallList } from "./calldrawer.js";
 import { openTheme } from "./themecard.js";
-import { bar, clear, el, label, num, pct, pctOf, signed, statusPill } from "./format.js";
+import { bar, clear, el, label, num, pct, pctOf, plural, signed, statusPill } from "./format.js";
 import { queryParams, state } from "./state.js";
 import { trendChart } from "./charts.js";
 
@@ -81,7 +81,7 @@ export async function renderDrivers() {
         out.appendChild(el("div", { class: "row" }, [
           el("div", { class: "row-head" }, [
             el("span", { class: "row-name", text: label(m.category) }),
-            el("span", { class: "row-meta", text: `${num(m.n_calls)} calls · ${pctOf(m.share_pct)}` }),
+            el("span", { class: "row-meta", text: `${plural(m.n_calls, "call")} · ${pctOf(m.share_pct)}` }),
           ]),
           bar((m.n_calls || 0) / Math.max(1, ...moments.map((x) => x.n_calls || 0)), "pos"),
           quote ? el("p", { class: "quote" }, [
@@ -103,7 +103,7 @@ export async function renderDrivers() {
         : { class: "row-name", text: label(row.name || row.key) });
       out.appendChild(el("div", { class: "row" }, [
         el("div", { class: "row-head" }, [name,
-          el("span", { class: "row-meta", text: `${num(row.n_calls)} calls · mean ${Number(row.mean_sentiment ?? 0).toFixed(1)}` })]),
+          el("span", { class: "row-meta", text: `${plural(row.n_calls, "call")} · mean ${Number(row.mean_sentiment ?? 0).toFixed(1)}` })]),
         bar((row.n_calls || 0) / max, driverPolarity === "positive" ? "pos" : "neg"),
         el("div", {}, (row.top_driver_categories || []).slice(0, 2).map((c) =>
           el("span", { class: "chip",
@@ -132,16 +132,25 @@ export async function renderEmerging() {
       out.appendChild(el("p", { class: "muted", text: `no theme passed the threshold at ${payload.as_of_week || "this week"}` }));
     }
     for (const row of rows) {
+      const recent = Number(row.n_recent) || 0;
+      const expected = Number(row.expected_recent ?? 0);
+      const ratio = expected > 0 ? recent / expected : null;
+      // The statistic (z, weeks, first-seen) is what built the detector; the pace is what a reader
+      // needs first. Plain sentence leads, the numbers that back it sit underneath in .row-meta.
+      const plain = ratio && ratio >= 1.15
+        ? `${plural(recent, "call")} in the last 4 weeks — about ${ratio.toFixed(1)}× the usual pace`
+        : `${plural(recent, "call")} in the last 4 weeks`;
       out.appendChild(el("div", { class: "row" }, [
         el("div", { class: "row-head" }, [
           el("button", { class: "linkish", text: row.name || row.theme_id, onclick: () => openTheme(row.theme_id) }),
           statusPill(row.status),
         ]),
+        el("p", { style: "margin:2px 0 0", text: plain }),
         el("div", { class: "row-meta", text:
-          `${num(row.n_recent)} recent vs ${Number(row.expected_recent ?? 0).toFixed(1)} expected · z ${Number(row.z ?? 0).toFixed(1)}` +
-          ` · ${num(row.weeks_recent)} weeks · first seen ${row.first_seen_week || "?"}` +
+          `expected ${expected.toFixed(1)} · z ${Number(row.z ?? 0).toFixed(1)} · ${plural(row.weeks_recent, "week")} with activity` +
+          ` · first seen ${row.first_seen_week || "?"}` +
           (row.robust_8w ? " · robust at 8 weeks" : "") + (row.novel_vocabulary ? " · new vocabulary" : "") }),
-        bar(Math.min(1, (Number(row.n_recent) || 0) / Math.max(5, ...rows.map((r) => r.n_recent || 0))), "neg"),
+        bar(Math.min(1, recent / Math.max(5, ...rows.map((r) => r.n_recent || 0))), "neg"),
       ]));
     }
     if (data.expected_false_positives !== undefined && data.expected_false_positives !== null) {
