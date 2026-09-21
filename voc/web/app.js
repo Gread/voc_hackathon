@@ -12,19 +12,43 @@ import { clearFilters, onChange, queryParams, readURL, setAsOf, setFilter, state
 import { initThemeCard } from "./js/themecard.js";
 
 let meta = null;
+const filterGroups = {};   // dim -> {id, values}, cached so a click can re-render without refetching
 
-function fillSelect(id, key, values, labels = label) {
-  const select = document.getElementById(id);
-  clear(select);
+/** A filter as toggle chips instead of a ctrl-click multi-select - no modifier key to discover, and
+ *  what's selected is visible without opening anything. */
+function fillChipGroup(id, key, values, labels = label) {
+  filterGroups[key] = { id, values };
+  const wrap = document.getElementById(id);
+  clear(wrap);
   for (const value of values) {
-    const option = el("option", { value, text: labels(value) });
-    if ((state.filters[key] || []).includes(value)) option.selected = true;
-    select.appendChild(option);
+    const on = (state.filters[key] || []).includes(value);
+    const chip = el("button", { type: "button", class: `chip${on ? " on" : ""}`,
+                                text: labels(value), "aria-pressed": String(on) });
+    chip.addEventListener("click", () => {
+      const current = state.filters[key] || [];
+      setFilter(key, on ? current.filter((v) => v !== value) : [...current, value]);
+    });
+    wrap.appendChild(chip);
   }
-  select.size = Math.min(4, Math.max(2, values.length));
-  select.addEventListener("change", () => {
-    setFilter(key, [...select.selectedOptions].map((o) => o.value));
-  });
+}
+
+/** The applied-state summary a filter widget needs to be trustworthy: what's selected, visible
+ *  without opening anything, and a way back to nothing. The corpus picker already shows its own
+ *  state, so it's left out here rather than repeated. */
+function renderFilterSummary() {
+  const node = document.getElementById("filterSummary");
+  if (!node) return;
+  const entries = Object.entries(state.filters).filter(([k]) => k !== "source");
+  if (!entries.length) {
+    node.textContent = "No filters applied — showing every contact in scope.";
+    node.classList.remove("applied");
+    return;
+  }
+  const DIM_LABEL = { product: "Product", segment: "Segment", region_group: "Region", date_from: "From", date_to: "To" };
+  node.textContent = entries
+    .map(([k, v]) => `${DIM_LABEL[k] || label(k)}: ${Array.isArray(v) ? `${v.length} selected` : v}`)
+    .join(" · ");
+  node.classList.add("applied");
 }
 
 /** Corpus picker. Two corpora differ in kind, so the choice stays visible and never defaults to a
@@ -73,14 +97,22 @@ function setupSources(sources) {
 
 async function loadFilterOptions() {
   // Options come from the data itself: the breakdown endpoint lists every value with support.
+  // The three dimensions are independent - run them together rather than waiting on each in turn.
   const dims = [["fProduct", "product"], ["fSegment", "segment"], ["fRegionGroup", "region_group"]];
-  for (const [id, dim] of dims) {
+  await Promise.all(dims.map(async ([id, dim]) => {
     try {
       const payload = await api.breakdown({}, { entity_type: "all", by: dim, min_n: 1 });
       const values = (payload.rows || []).map((r) => r.value).filter(Boolean);
-      if (values.length) fillSelect(id, dim, values);
-    } catch { /* leave the select empty if the dimension is unavailable */ }
-  }
+      if (values.length) fillChipGroup(id, dim, values);
+    } catch { /* leave the group empty if the dimension is unavailable */ }
+  }));
+}
+
+/** Re-render every chip group from its cached values, so a click reflects state.filters without a
+ *  refetch. Kept separate from loadFilterOptions, which only needs to run once. */
+function refreshFilterChips() {
+  for (const [key, { id, values }] of Object.entries(filterGroups)) fillChipGroup(id, key, values);
+  renderFilterSummary();
 }
 
 function setupAsOf(weeks) {
@@ -214,16 +246,14 @@ async function boot() {
     clearFilters();
     for (const box of document.querySelectorAll("#sourceBoxes input")) box.checked = true;
     for (const box of document.querySelectorAll("#sourceBoxes .source-box")) box.classList.add("on");
-    for (const id of ["fProduct", "fSegment", "fRegionGroup"]) {
-      for (const o of document.getElementById(id).options) o.selected = false;
-    }
     document.getElementById("fFrom").value = "";
     document.getElementById("fTo").value = "";
+    refreshFilterChips();
   });
   for (const [id, key] of [["fFrom", "date_from"], ["fTo", "date_to"]]) {
     const input = document.getElementById(id);
     input.value = state.filters[key] || "";
-    input.addEventListener("change", () => setFilter(key, input.value));
+    input.addEventListener("change", () => { setFilter(key, input.value); renderFilterSummary(); });
   }
   document.getElementById("aboutBtn").addEventListener("click", aboutModal);
 
@@ -245,8 +275,9 @@ async function boot() {
   initGraph();
   initNav({ navGraph: showGraph });      // the scene is built on first visit, not on boot
   await loadFilterOptions();
+  renderFilterSummary();
   renderAll();
-  onChange((reason) => { if (reason !== "asof") renderAll(); });
+  onChange((reason) => { if (reason === "filters") refreshFilterChips(); if (reason !== "asof") renderAll(); });
 }
 
 boot();
