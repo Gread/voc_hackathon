@@ -213,15 +213,17 @@ function renderHero() {
   const corpusPhrase = kinds.includes("real") && kinds.includes("synthetic")
     ? "real written complaints and synthetic call transcripts"
     : kinds.includes("synthetic") ? "synthetic call transcripts" : "real written complaints";
+  // No figures in this line any more - the two it used to carry are the first two stats, a stride
+  // below it. What it says that nothing else on the page says is what the corpus is made of, which
+  // is a disclosure rather than decoration, so the sentence stays and the digits go.
   document.getElementById("heroLine").textContent =
-    `${num(counts.n_calls)} customer contacts - ${corpusPhrase} - read once each and grouped into `
-    + `${num(counts.n_themes)} themes.`;
+    `Contacts are ${corpusPhrase}, each read once and grouped into themes.`;
 
   const stats = [
     [num(counts.n_calls), "contacts read"],
     [num(counts.n_themes), `themes, from ${num(counts.n_topics)} topics`],
     [qa.quote_verify_rate != null ? pct(qa.quote_verify_rate) : "-", "quotes verify word-for-word"],
-    [qa.reason_agreement != null ? pct(qa.reason_agreement) : "-", "match the bank's own category, read blind"],
+    [qa.reason_agreement != null ? pct(qa.reason_agreement) : "-", "agree with the bank's own category, read blind"],
   ];
   const wrap = clear(document.getElementById("heroStats"));
   for (const [value, caption] of stats) {

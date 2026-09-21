@@ -239,6 +239,7 @@ export async function renderEmerging() {
         seriesById = Object.fromEntries((trend.rows || []).map((r) => [r.entity_id, r.series || []]));
       } catch { /* sparklines are an enhancement, never a dependency */ }
     }
+    let drewSpark = false;
     for (const row of rows) {
       const recent = Number(row.n_recent) || 0;
       const expected = Number(row.expected_recent ?? 0);
@@ -248,24 +249,33 @@ export async function renderEmerging() {
       const plain = ratio && ratio >= 1.15
         ? `${plural(recent, "call")} in the last 4 weeks — about ${ratio.toFixed(1)}× the usual pace`
         : `${plural(recent, "call")} in the last 4 weeks`;
-      out.appendChild(el("div", { class: "row" }, [
-        el("div", { class: "row-head" }, [
-          el("button", { class: "linkish", text: row.name || row.theme_id, onclick: () => openTheme(row.theme_id) }),
-          statusPill(row.status),
+      const series = seriesById[row.theme_id] || [];
+      if (series.length) drewSpark = true;
+      // Text left, trajectory right, instead of the line sitting under the text at whatever height
+      // the panel's width implied. Five themes now cost about as much page as two used to.
+      out.appendChild(el("div", { class: "row emerging-row" }, [
+        el("div", { class: "emerging-text" }, [
+          el("div", { class: "row-head" }, [
+            el("button", { class: "linkish", text: row.name || row.theme_id, onclick: () => openTheme(row.theme_id) }),
+            statusPill(row.status),
+          ]),
+          el("p", { style: "margin:2px 0 0", text: plain }),
+          el("div", { class: "row-meta",
+            title: `expected ${expected.toFixed(1)} · z ${Number(row.z ?? 0).toFixed(1)} · ${plural(row.weeks_recent, "week")} with activity`,
+            text: `First seen ${row.first_seen_week || "?"}`
+            + (row.robust_8w ? " · confirmed over 8 weeks, not just 4" : "")
+            + (row.novel_vocabulary ? " · wording not seen before" : "") }),
         ]),
-        el("p", { style: "margin:2px 0 0", text: plain }),
-        el("div", { class: "row-meta",
-          title: `expected ${expected.toFixed(1)} · z ${Number(row.z ?? 0).toFixed(1)} · ${plural(row.weeks_recent, "week")} with activity`,
-          text: `First seen ${row.first_seen_week || "?"}`
-          + (row.robust_8w ? " · confirmed over 8 weeks, not just 4" : "")
-          + (row.novel_vocabulary ? " · wording not seen before" : "") }),
-        (seriesById[row.theme_id] || []).length
-          ? el("div", { class: "spark-wrap" }, [
-              sparkline(seriesById[row.theme_id]),
-              el("span", { class: "spark-caption", text: "weekly calls, last 6 months · red = the last 4 weeks" }),
-            ])
+        series.length
+          ? el("div", { class: "spark-wrap" }, [sparkline(series)])
           : bar(Math.min(1, recent / Math.max(5, ...rows.map((r) => r.n_recent || 0))), "neg"),
       ]));
+    }
+    // The legend belongs to the panel, not to each theme: it was the same sentence repeated under
+    // every row, which is the wall of text this panel was rebuilt to get rid of.
+    if (drewSpark) {
+      out.insertBefore(el("p", { class: "footnote spark-legend",
+        text: "Lines show weekly calls over the last 6 months · red marks the last 4 weeks" }), out.firstChild);
     }
     if (data.expected_false_positives !== undefined && data.expected_false_positives !== null) {
       const fp = Number(data.expected_false_positives);
