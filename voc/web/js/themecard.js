@@ -123,7 +123,7 @@ export async function openTheme(themeId) {
     out.appendChild(el("h3", { text: "What specifically triggers it" }));
     for (const t of d.top_specific_drivers) {
       out.appendChild(el("div", { class: "row" }, [
-        el("span", { text: t.text }), el("span", { class: "row-meta", text: ` ${num(t.n)} calls` }),
+        el("span", { text: t.text }), el("span", { class: "row-meta", text: ` ${plural(t.n, "call")}` }),
       ]));
     }
   }

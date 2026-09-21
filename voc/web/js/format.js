@@ -53,6 +53,15 @@ export function label(code) {
 
 export const shortDate = (iso) => (iso ? String(iso).slice(0, 10) : "");
 
+/** A hard character slice cuts mid-word; this backs up to the last space before the limit. */
+export function truncate(text, max = 160) {
+  const s = String(text ?? "");
+  if (s.length <= max) return s;
+  const cut = s.slice(0, max);
+  const lastSpace = cut.lastIndexOf(" ");
+  return `${lastSpace > max * 0.6 ? cut.slice(0, lastSpace) : cut}…`;
+}
+
 // Minimal, safe markdown: paragraphs, **bold**, *italic*, `code`, - lists, and [c1] claim markers.
 export function markdown(text) {
   const inline = (s) => esc(s)

@@ -2,7 +2,7 @@
 // queries the dashboard runs. Every count is a link to the calls behind it.
 import { api } from "./api.js";
 import { openCall, openCallList } from "./calldrawer.js";
-import { clear, el, label, num, pctOf } from "./format.js";
+import { clear, el, label, num, pctOf, plural } from "./format.js";
 import { openTheme } from "./themecard.js";
 
 const QUESTIONS = [
@@ -70,7 +70,7 @@ function sectionChanged(d) {
       out.appendChild(el("div", { class: "row" }, [
         el("div", { class: "row-head" }, [
           el("button", { class: "linkish row-name", text: t.name, onclick: () => openTheme(t.theme_id) }),
-          el("span", { class: "row-meta", text: `${num(t.n_calls)} calls` }),
+          el("span", { class: "row-meta", text: plural(t.n_calls, "call") }),
         ]),
       ]));
     }
@@ -89,7 +89,7 @@ function sectionFeeling(d) {
         out.appendChild(el("div", { class: "row" }, [
           el("div", { class: "row-head" }, [
             el("span", { class: "row-name", text: label(m.category) }),
-            el("span", { class: "row-meta", text: `${num(m.n_calls)} calls` }),
+            el("span", { class: "row-meta", text: plural(m.n_calls, "call") }),
           ]),
           (m.quotes || [])[0] ? quoteLine(m.quotes[0]) : null,
         ]));
@@ -106,7 +106,7 @@ function sectionFeeling(d) {
           r.theme_id
             ? el("button", { class: "linkish row-name", text: r.name, onclick: () => openTheme(r.theme_id) })
             : el("span", { class: "row-name", text: r.name }),
-          el("span", { class: "row-meta", text: `${num(r.n_calls)} calls · mean ${r.mean_sentiment}` }),
+          el("span", { class: "row-meta", text: `${plural(r.n_calls, "call")} · mean ${r.mean_sentiment}` }),
         ]),
         r.triggers?.length ? el("p", { class: "trigger", text: r.triggers[0] }) : null,
         (r.quotes || [])[0] ? quoteLine(r.quotes[0]) : null,
@@ -155,7 +155,7 @@ function sectionSupporting(d) {
       el("div", { class: "row-head" }, [
         el("button", { class: "linkish row-name", text: g.name, onclick: () => openTheme(g.theme_id) }),
         el("span", { class: "row-meta",
-          text: `${num(g.n_distinct_calls)} distinct calls${g.window && g.window.includes("..") ? ` · ${g.window}` : ""}` }),
+          text: `${plural(g.n_distinct_calls, "distinct call")}${g.window && g.window.includes("..") ? ` · ${g.window}` : ""}` }),
       ]),
       ...(g.quotes || []).map(quoteLine),
     ]));

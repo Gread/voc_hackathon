@@ -3,7 +3,7 @@
 import { api } from "./api.js";
 import { openCall, openCallList } from "./calldrawer.js";
 import { openTheme } from "./themecard.js";
-import { bar, clear, el, label, num, pct, pctOf, plural, signed, statusPill } from "./format.js";
+import { bar, clear, el, label, num, pct, pctOf, plural, shortDate, signed, statusPill, truncate } from "./format.js";
 import { queryParams, state } from "./state.js";
 import { trendChart } from "./charts.js";
 
@@ -28,6 +28,11 @@ export async function renderReasons() {
     const max = Math.max(1, ...rows.map((r) => r.n_calls || 0));
     const out = clear(node);
     if (!rows.length) { out.appendChild(el("p", { class: "muted", text: "no reasons above minimum support in this scope" })); return; }
+    const prevWindow = payload.data?.previous_period;
+    if (prevWindow) {
+      out.appendChild(el("p", { class: "footnote", text:
+        `Change is against ${shortDate(prevWindow[0])} to ${shortDate(prevWindow[1])} - the same length of time, immediately before.` }));
+    }
     for (const row of rows) {
       // A delta needs a comparable previous period; without one only the trend direction is meaningful.
       const comparable = Number(row.n_previous) > 0;
@@ -44,7 +49,7 @@ export async function renderReasons() {
           ]),
         ]),
         bar((row.n_calls || 0) / max),
-        specifics ? el("p", { class: "quote", text: specifics.slice(0, 160) }) : null,
+        specifics ? el("p", { class: "quote", text: truncate(specifics, 160) }) : null,
       ]));
     }
     if (payload.result_id) {
@@ -161,6 +166,8 @@ export async function renderEmerging() {
   } catch (err) { failed(node, err); }
 }
 
+let trendGrain = "month";
+
 export async function renderTrend(entityIds = null) {
   const subtitle = document.getElementById("trendSubtitle");
   try {
@@ -171,12 +178,12 @@ export async function renderTrend(entityIds = null) {
     }
     lastTrendIds = ids;
     if (!ids.length) { subtitle.textContent = "no themes in this scope"; return; }
-    const payload = await api.trend(ids, "month", queryParams());
+    const payload = await api.trend(ids, trendGrain, queryParams());
     const series = (payload.rows || []).map((r) => ({
       label: r.name || r.entity_id,
       points: (r.series || r.points || []).map((p) => ({ period: p.period, share: p.share, n_calls: p.n_calls })),
     })).filter((s) => s.points.length);
-    subtitle.textContent = `monthly share · ${series.length} themes`;
+    subtitle.textContent = `${trendGrain}ly share · ${series.length} themes`;
     trendChart("trendChart", series, { valueKey: "share" });
   } catch (err) { subtitle.textContent = `trend unavailable: ${err.message}`; }
 }
@@ -188,6 +195,14 @@ export function initDashboard() {
       tab.classList.add("active");
       driverPolarity = tab.dataset.polarity;
       renderDrivers();
+    });
+  }
+  for (const tab of document.querySelectorAll("#trendGrain .tab")) {
+    tab.addEventListener("click", () => {
+      for (const t of document.querySelectorAll("#trendGrain .tab")) t.classList.remove("active");
+      tab.classList.add("active");
+      trendGrain = tab.dataset.grain;
+      renderTrend(lastTrendIds.length ? lastTrendIds : null);
     });
   }
 }
