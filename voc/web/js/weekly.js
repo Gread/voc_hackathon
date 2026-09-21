@@ -19,6 +19,17 @@ const QUESTIONS = [
 let weeks = [];
 let current = null;
 
+/** The -2..+2 sentiment scale in words - see the same helper in dashboard.js. */
+function sentimentWord(mean) {
+  const v = Number(mean);
+  if (!Number.isFinite(v)) return null;
+  if (v <= -1.5) return "very negative";
+  if (v <= -0.5) return "negative";
+  if (v < 0.5) return "mixed";
+  if (v < 1.5) return "positive";
+  return "very positive";
+}
+
 const arrow = (d) => (d === "up" ? "▲" : d === "down" ? "▼" : d === "flat" ? "→" : "");
 const moveClass = (d) => (d === "up" ? "up" : d === "down" ? "down" : "flat");
 
@@ -106,7 +117,9 @@ function sectionFeeling(d) {
           r.theme_id
             ? el("button", { class: "linkish row-name", text: r.name, onclick: () => openTheme(r.theme_id) })
             : el("span", { class: "row-name", text: r.name }),
-          el("span", { class: "row-meta", text: `${plural(r.n_calls, "call")} · mean ${r.mean_sentiment}` }),
+          el("span", { class: "row-meta",
+                       title: `mean sentiment ${r.mean_sentiment} on a -2 to +2 scale`,
+                       text: `${plural(r.n_calls, "call")}${sentimentWord(r.mean_sentiment) ? ` · ${sentimentWord(r.mean_sentiment)}` : ""}` }),
         ]),
         r.triggers?.length ? el("p", { class: "trigger", text: r.triggers[0] }) : null,
         (r.quotes || [])[0] ? quoteLine(r.quotes[0]) : null,

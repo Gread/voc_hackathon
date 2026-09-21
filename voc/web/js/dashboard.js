@@ -30,6 +30,18 @@ function callsLink(resultId, text, title) {
   return el("button", { class: "linkish", text, onclick: () => openCallList(resultId, title) });
 }
 
+/** "mean -1.2" is the -2..+2 sentiment scale showing through. Nobody outside the team reads that
+ *  as "these customers are angry", so say it in words and keep the number in the tooltip. */
+function sentimentWord(mean) {
+  const v = Number(mean);
+  if (!Number.isFinite(v)) return null;
+  if (v <= -1.5) return "very negative";
+  if (v <= -0.5) return "negative";
+  if (v < 0.5) return "mixed";
+  if (v < 1.5) return "positive";
+  return "very positive";
+}
+
 export async function renderReasons() {
   const node = panel("reasonsBody");
   try {
@@ -38,10 +50,17 @@ export async function renderReasons() {
     const max = Math.max(1, ...rows.map((r) => r.n_calls || 0));
     const out = clear(node);
     if (!rows.length) { out.appendChild(el("p", { class: "muted", text: "no reasons above minimum support in this scope" })); return; }
+    // Only claim a comparison when one exists. The API always hands back a previous window of the
+    // same length, but here that lands on 2020-11..2023-08, where this corpus has no calls at all -
+    // announcing it implied these shares were measured against something real. They weren't.
     const prevWindow = payload.data?.previous_period;
-    if (prevWindow) {
+    const comparable = rows.some((r) => Number(r.n_previous) > 0);
+    if (prevWindow && comparable) {
       out.appendChild(el("p", { class: "footnote", text:
         `Change is against ${shortDate(prevWindow[0])} to ${shortDate(prevWindow[1])} - the same length of time, immediately before.` }));
+    } else {
+      out.appendChild(el("p", { class: "footnote", text:
+        "Share of all contacts in view. There is no earlier period in this data to compare against." }));
     }
     for (const row of rows) {
       // A delta needs a comparable previous period; without one only the trend direction is meaningful.
@@ -116,13 +135,16 @@ export async function renderDrivers() {
       const name = el(themeId ? "button" : "span", themeId
         ? { class: "linkish", text: row.name || themeId, onclick: () => openTheme(themeId) }
         : { class: "row-name", text: label(row.name || row.key) });
+      const mood = sentimentWord(row.mean_sentiment);
       out.appendChild(el("div", { class: "row" }, [
         el("div", { class: "row-head" }, [name,
-          el("span", { class: "row-meta", text: `${plural(row.n_calls, "call")} · mean ${Number(row.mean_sentiment ?? 0).toFixed(1)}` })]),
+          el("span", { class: "row-meta",
+                       title: `mean sentiment ${Number(row.mean_sentiment ?? 0).toFixed(2)} on a -2 to +2 scale`,
+                       text: `${plural(row.n_calls, "call")}${mood ? ` · ${mood}` : ""}` })]),
         bar((row.n_calls || 0) / max, driverPolarity === "positive" ? "pos" : "neg"),
         el("div", {}, (row.top_driver_categories || []).slice(0, 2).map((c) =>
           el("span", { class: "chip",
-                       text: `${label(typeof c === "string" ? c : c.driver_category || c.key)}${c.n_calls ? ` ${c.n_calls}` : ""}` }))),
+                       text: `${label(typeof c === "string" ? c : c.driver_category || c.key)}${c.n_calls ? ` · ${num(c.n_calls)}` : ""}` }))),
         (row.top_specific_drivers || []).length
           ? el("p", { class: "quote", text: row.top_specific_drivers[0].text }) : null,
         quote ? el("p", { class: "quote" }, [
