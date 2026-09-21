@@ -189,7 +189,8 @@ function pipelineStrip() {
   const bits = [
     `${num(counts.n_calls)} calls`, `${num(counts.n_topics)} topics`, `${num(counts.n_themes)} themes`,
   ];
-  if (qa.reason_agreement) bits.push(`${pct(qa.reason_agreement)} match the bank's own labels`);
+  // Two facts, not four: at 12px in a 244px rail, the label-agreement figure pushed this strip to
+  // four wrapped lines. It still appears in full on the Overview hero and in About this data.
   if (qa.quote_verify_rate) bits.push(`${pct(qa.quote_verify_rate)} of quotes verified`);
   document.getElementById("pipelineStrip").textContent = bits.join(" · ");
 }
