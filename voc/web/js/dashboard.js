@@ -78,7 +78,13 @@ export async function renderReasons() {
           ]),
         ]),
         bar((row.n_calls || 0) / max),
-        specifics ? el("p", { class: "quote", text: truncate(specifics, 160) }) : null,
+        // The examples are worth having, but three of them per row turned this panel into prose.
+        specifics
+          ? el("details", { class: "row-detail" }, [
+              el("summary", { text: "What they asked for" }),
+              el("p", { class: "quote", text: truncate(specifics, 220) }),
+            ])
+          : null,
       ]));
     }
     if (payload.result_id) {
@@ -118,9 +124,14 @@ export async function renderDrivers() {
             el("span", { class: "row-meta", text: `${plural(m.n_calls, "call")} · ${pctOf(m.share_pct)}` }),
           ]),
           bar((m.n_calls || 0) / Math.max(1, ...moments.map((x) => x.n_calls || 0)), "pos"),
-          quote ? el("p", { class: "quote" }, [
-            el("button", { class: "linkish", text: `"${quote.quote.slice(0, 150)}"`,
-                           onclick: () => openCall(quote.call_id, quote.quote) })]) : null,
+          quote
+            ? el("details", { class: "row-detail" }, [
+                el("summary", { text: "What they said" }),
+                el("p", { class: "quote" }, [
+                  el("button", { class: "linkish", text: `"${quote.quote.slice(0, 150)}"`,
+                                 onclick: () => openCall(quote.call_id, quote.quote) })]),
+              ])
+            : null,
         ]));
       }
     }
@@ -145,11 +156,18 @@ export async function renderDrivers() {
         el("div", {}, (row.top_driver_categories || []).slice(0, 2).map((c) =>
           el("span", { class: "chip",
                        text: `${label(typeof c === "string" ? c : c.driver_category || c.key)}${c.n_calls ? ` · ${num(c.n_calls)}` : ""}` }))),
-        (row.top_specific_drivers || []).length
-          ? el("p", { class: "quote", text: row.top_specific_drivers[0].text }) : null,
-        quote ? el("p", { class: "quote" }, [
-          el("button", { class: "linkish", text: `"${quote.quote.slice(0, 150)}"`,
-                         onclick: () => openCall(quote.call_id, quote.quote) })]) : null,
+        // The driver and the verbatim quote are the evidence, not the headline: kept, one click in,
+        // so the panel scans as ranked bars rather than three paragraphs per row.
+        (row.top_specific_drivers || []).length || quote
+          ? el("details", { class: "row-detail" }, [
+              el("summary", { text: "What they said" }),
+              (row.top_specific_drivers || []).length
+                ? el("p", { class: "quote", text: row.top_specific_drivers[0].text }) : null,
+              quote ? el("p", { class: "quote" }, [
+                el("button", { class: "linkish", text: `"${quote.quote.slice(0, 150)}"`,
+                               onclick: () => openCall(quote.call_id, quote.quote) })]) : null,
+            ])
+          : null,
       ]));
     }
     if (payload.result_id) {
