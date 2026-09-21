@@ -116,9 +116,14 @@ export function barsChart(canvasId, rows, { horizontal = true, tone = "brand" } 
  *  Monochrome blue ramp rather than a rainbow: the categories have no inherent colour meaning,
  *  and a ramp keeps it on brand and readable for anyone who can't separate hues.
  */
-const RAMP = ["#00315c", "#00427a", "#005aa0", "#3d87bd", "#7fb3d9", "#b6d7ee"];
+const RAMPS = {
+  brand: ["#00315c", "#00427a", "#005aa0", "#3d87bd", "#7fb3d9", "#b6d7ee"],
+  neg: ["#5c0210", "#870315", "#b8041c", "#e40523", "#ef5b6b", "#f7a3ac"],
+  pos: ["#1f3b1b", "#2d4a27", "#3e6237", "#5a8450", "#86ad7c", "#b7d0b0"],
+};
 
-export function donutChart(canvasId, rows, { top = 6 } = {}) {
+export function donutChart(canvasId, rows, { top = 6, ramp = "brand" } = {}) {
+  const RAMP = RAMPS[ramp] || RAMPS.brand;
   const sorted = [...rows].sort((a, b) => (b.value || 0) - (a.value || 0));
   const head = sorted.slice(0, top);
   const tail = sorted.slice(top);
@@ -139,7 +144,19 @@ export function donutChart(canvasId, rows, { top = 6 } = {}) {
       plugins: {
         legend: {
           position: "right",
-          labels: { color: cssVar("--ink", "#292929"), boxWidth: 12, padding: 10, font: { size: 12 } },
+          labels: {
+            color: cssVar("--ink", "#292929"), boxWidth: 12, padding: 10, font: { size: 12 },
+            // Theme names are whole sentences ("claim denied on your records, my evidence never
+            // looked at"), which the legend clips mid-word in a half-width panel. Shorten here
+            // only - the slice keeps its full name, so the tooltip still reads in full.
+            generateLabels(chart) {
+              const base = window.Chart.overrides.doughnut.plugins.legend.labels.generateLabels(chart);
+              return base.map((item) => ({
+                ...item,
+                text: item.text.length > 30 ? `${item.text.slice(0, 29).trimEnd()}…` : item.text,
+              }));
+            },
+          },
         },
         tooltip: {
           backgroundColor: cssVar("--panel", "#fff"), titleColor: cssVar("--ink", "#000"),

@@ -9,6 +9,7 @@ import { donutChart, seriesToTable, sparkline, trendChart } from "./charts.js";
 
 let driverPolarity = "negative";
 let reasonsView = "ranked";
+let driversView = "ranked";
 let lastTrendIds = [];
 
 function panel(id) { return document.getElementById(id); }
@@ -129,6 +130,30 @@ export async function renderDrivers() {
     const rows = payload.rows || [];
     const moments = (payload.data || {}).positive_moments_by_category || [];
     const out = clear(node);
+
+    // Share view. Which dataset is on screen differs by tab: themes carry the negative side, and
+    // positive-moment categories carry the positive one, because positive topics rarely clear
+    // minimum support on a complaint corpus. The donut follows whichever is actually shown.
+    if (driversView === "share") {
+      const source = driverPolarity === "positive" && moments.length
+        ? moments.map((m) => ({ label: label(m.category), value: Number(m.n_calls) || 0 }))
+        : rows.map((r) => ({ label: r.name || label(r.key), value: Number(r.n_calls) || 0 }));
+      if (!source.length) {
+        out.appendChild(el("p", { class: "muted", text: "nothing above minimum support in this scope" }));
+        return;
+      }
+      const canvas = el("canvas", { id: "driversDonut" });
+      out.appendChild(el("div", { class: "donut-box" }, [canvas]));
+      setTimeout(() => donutChart("driversDonut", source,
+        { ramp: driverPolarity === "positive" ? "pos" : "neg" }), 0);
+      if (payload.result_id) {
+        out.appendChild(el("p", { class: "footnote" }, [
+          callsLink(payload.result_id, "which calls?", "Calls behind these drivers"),
+        ]));
+      }
+      return;
+    }
+
     if (driverPolarity === "positive") {
       out.appendChild(el("p", { class: "footnote", text: payload.data?.corpus_note
         ? `What went right, ${payload.data.corpus_note}.`
@@ -292,6 +317,14 @@ export function initDashboard() {
       setActiveTab("#reasonsView .tab", tab);
       reasonsView = tab.dataset.view;
       renderReasons();
+    });
+  }
+  for (const tab of document.querySelectorAll("#driversView .tab")) {
+    tab.setAttribute("aria-pressed", String(tab.classList.contains("active")));
+    tab.addEventListener("click", () => {
+      setActiveTab("#driversView .tab", tab);
+      driversView = tab.dataset.view;
+      renderDrivers();
     });
   }
   for (const tab of document.querySelectorAll("#trendGrain .tab")) {
