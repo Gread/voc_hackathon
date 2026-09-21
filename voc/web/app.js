@@ -12,6 +12,29 @@ import { clearFilters, onChange, queryParams, readURL, setAsOf, setFilter, state
 import { initThemeCard } from "./js/themecard.js";
 
 let meta = null;
+
+/** The rail hides to width:0 (styles.css) rather than unmounting, so the toggle just flips one
+ *  class; graph.js's three.js canvas reads its own size on resize, so it needs a nudge once the
+ *  transition finishes and the content column has actually changed width. */
+function initRailToggle() {
+  const btn = document.getElementById("railToggle");
+  const KEY = "voc.railCollapsed";
+  const apply = (collapsed) => {
+    document.querySelector(".shell").classList.toggle("rail-collapsed", collapsed);
+    btn.setAttribute("aria-expanded", String(!collapsed));
+    btn.setAttribute("aria-label", collapsed ? "Show navigation" : "Hide navigation");
+    btn.title = collapsed ? "Show navigation" : "Hide navigation";
+  };
+  let collapsed = false;
+  try { collapsed = localStorage.getItem(KEY) === "1"; } catch { /* private window or blocked storage */ }
+  apply(collapsed);
+  btn.addEventListener("click", () => {
+    collapsed = !collapsed;
+    apply(collapsed);
+    try { localStorage.setItem(KEY, collapsed ? "1" : "0"); } catch { /* per-viewer convenience only */ }
+    window.setTimeout(() => window.dispatchEvent(new Event("resize")), 200);
+  });
+}
 const filterGroups = {};   // dim -> {id, values}, cached so a click can re-render without refetching
 
 /** A filter as toggle chips instead of a ctrl-click multi-select - no modifier key to discover, and
@@ -239,6 +262,7 @@ function aboutModal() {
 
 async function boot() {
   readURL();
+  initRailToggle();
   initDrawer();
   initThemeCard();
   initDashboard();
