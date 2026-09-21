@@ -106,6 +106,21 @@ export function barsChart(canvasId, rows, { horizontal = true, tone = "brand" } 
   });
 }
 
+/** The same pivot trendChart() does internally, exposed so a text table can show exactly what the
+ *  canvas draws - Chart.js renders to a bitmap, invisible to assistive tech and with no fallback
+ *  content of its own, so the table is the honest alternative rather than a decorative extra. */
+export function seriesToTable(series, valueKey = "share") {
+  const periods = [...new Set(series.flatMap((s) => s.points.map((p) => p.period)))].sort();
+  const columns = ["Period", ...series.map((s) => s.label)];
+  const rows = periods.map((p) => [p, ...series.map((s) => {
+    const point = s.points.find((pt) => pt.period === p);
+    if (!point) return "-";
+    const v = point[valueKey];
+    return valueKey === "share" ? `${((v <= 1 ? v * 100 : v) || 0).toFixed(1)}%` : String(v ?? "-");
+  })]);
+  return { columns, rows };
+}
+
 export function destroyAll() {
   for (const chart of charts.values()) chart.destroy();
   charts.clear();

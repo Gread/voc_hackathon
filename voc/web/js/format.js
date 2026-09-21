@@ -96,6 +96,30 @@ export function statusPill(status) {
   return el("span", { class: `pill ${esc(status || "stable")}`, text: status || "stable" });
 }
 
+/** A canvas chart has no text content at all - nothing for a screen reader, nothing to copy. This
+ *  appends a toggle and a real, initially-collapsed table with the chart's own numbers as its text
+ *  alternative. Removes any table+toggle it previously attached to the same wrap first, so a
+ *  re-render doesn't accumulate copies. */
+export function attachChartTable(wrap, columns, rows) {
+  wrap.querySelector(".chart-table-toggle")?.remove();
+  wrap.querySelector(".chart-table")?.remove();
+  const table = el("table", { class: "chart-table" }, [
+    el("thead", {}, [el("tr", {}, columns.map((c) => el("th", { text: c })))]),
+    el("tbody", {}, rows.map((r) => el("tr", {}, r.map((v, i) =>
+      el(i === 0 ? "th" : "td", i === 0 ? { text: String(v), scope: "row" } : { text: String(v) }))))),
+  ]);
+  table.hidden = true;
+  const btn = el("button", { type: "button", class: "ghost chart-table-toggle",
+                             text: "View as table", "aria-expanded": "false" });
+  btn.addEventListener("click", () => {
+    table.hidden = !table.hidden;
+    btn.textContent = table.hidden ? "View as table" : "Hide table";
+    btn.setAttribute("aria-expanded", String(!table.hidden));
+  });
+  wrap.appendChild(btn);
+  wrap.appendChild(table);
+}
+
 /** "1 product", "3 products" - the theme card headline is the demo's most-read line. */
 export function plural(n, singular, pluralForm = null) {
   const count = Number(n) || 0;

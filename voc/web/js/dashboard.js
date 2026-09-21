@@ -3,9 +3,9 @@
 import { api } from "./api.js";
 import { openCall, openCallList } from "./calldrawer.js";
 import { openTheme } from "./themecard.js";
-import { bar, clear, el, label, num, pct, pctOf, plural, shortDate, signed, statusPill, truncate } from "./format.js";
+import { attachChartTable, bar, clear, el, label, num, pct, pctOf, plural, shortDate, signed, statusPill, truncate } from "./format.js";
 import { queryParams, state } from "./state.js";
-import { trendChart } from "./charts.js";
+import { seriesToTable, trendChart } from "./charts.js";
 
 let driverPolarity = "negative";
 let lastTrendIds = [];
@@ -195,6 +195,8 @@ export async function renderTrend(entityIds = null) {
     })).filter((s) => s.points.length);
     subtitle.textContent = `${trendGrain}ly share · ${series.length} themes`;
     trendChart("trendChart", series, { valueKey: "share" });
+    const { columns, rows } = seriesToTable(series, "share");
+    attachChartTable(document.getElementById("trendChart").parentElement, columns, rows);
   } catch (err) { subtitle.textContent = `trend unavailable: ${err.message}`; }
 }
 

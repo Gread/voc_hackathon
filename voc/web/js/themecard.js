@@ -3,9 +3,9 @@
 import { api } from "./api.js";
 import { openCall, openCallList } from "./calldrawer.js";
 import { closeOverlay, openOverlay } from "./dialog.js";
-import { clear, el, label, num, pct, plural, shortDate, statusPill } from "./format.js";
+import { attachChartTable, clear, el, label, num, pct, plural, shortDate, statusPill } from "./format.js";
 import { queryParams } from "./state.js";
-import { trendChart } from "./charts.js";
+import { seriesToTable, trendChart } from "./charts.js";
 
 const modal = () => document.getElementById("modal");
 const body = () => document.getElementById("modalBody");
@@ -107,9 +107,15 @@ export async function openTheme(themeId) {
     out.appendChild(el("h3", { text: "Week by week" }));
     const canvas = el("canvas", { id: "themeTrendChart", height: "120" });
     out.appendChild(el("div", { style: "height:160px" }, [canvas]));
-    setTimeout(() => trendChart("themeTrendChart",
-      [{ label: d.name || themeId, points: d.weekly_series.map((p) => ({ period: p.period, share: p.share, n_calls: p.n_calls })) }],
-      { valueKey: "n_calls" }), 0);
+    const tableWrap = el("div");
+    out.appendChild(tableWrap);
+    const series = [{ label: d.name || themeId,
+                      points: d.weekly_series.map((p) => ({ period: p.period, share: p.share, n_calls: p.n_calls })) }];
+    setTimeout(() => {
+      trendChart("themeTrendChart", series, { valueKey: "n_calls" });
+      const { columns, rows } = seriesToTable(series, "n_calls");
+      attachChartTable(tableWrap, columns, rows);
+    }, 0);
   }
 
   out.appendChild(el("h3", { text: `The same problem in ${plural(d.n_wordings, "different wording")}` }));
