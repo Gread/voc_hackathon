@@ -163,8 +163,9 @@ export async function renderEmerging() {
         el("p", { style: "margin:2px 0 0", text: plain }),
         el("div", { class: "row-meta",
           title: `expected ${expected.toFixed(1)} · z ${Number(row.z ?? 0).toFixed(1)} · ${plural(row.weeks_recent, "week")} with activity`,
-          text: `First seen ${row.first_seen_week || "?"}` +
-          (row.robust_8w ? " · confirmed over 8 weeks, not just 4" : "") + (row.novel_vocabulary ? " · wording not seen before" : "") }),
+          text: `First seen ${row.first_seen_week || "?"}`
+          + (row.robust_8w ? " · confirmed over 8 weeks, not just 4" : "")
+          + (row.novel_vocabulary ? " · wording not seen before" : "") }),
         bar(Math.min(1, recent / Math.max(5, ...rows.map((r) => r.n_recent || 0))), "neg"),
       ]));
     }

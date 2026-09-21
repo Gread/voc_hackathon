@@ -29,6 +29,20 @@ const TOOL_LABELS = {
 };
 const toolLabel = (name) => TOOL_LABELS[name] || label(name || "tool");
 
+/** A verification result as a Carbon inline notification rather than a bare tinted paragraph: the
+ *  server correcting the model's own number is the product's whole argument, and it should look
+ *  like a deliberate system message, not a styling accident. Falls back to the old paragraph if
+ *  the vendored component isn't there. */
+function notice(kind, title, body) {
+  if (!window.customElements?.get("cds-inline-notification")) {
+    return el("p", { class: kind === "error" ? "correction" : "caveat", text: `${title}: ${body}` });
+  }
+  return el("cds-inline-notification", {
+    kind, title, subtitle: body, "hide-close-button": "", "low-contrast": "",
+    style: "margin:8px 0; max-width:none",
+  });
+}
+
 function renderChart(chart, results) {
   const source = results[chart.result_id];
   if (!source) return null;
@@ -90,10 +104,11 @@ function renderAnswer(answer, results, trace, toolCalls) {
         ...(claim.theme_ids || []).map((t) =>
           el("button", { class: "linkish", text: " theme", onclick: () => openTheme(t) })),
       ]),
-      unverified ? el("p", { class: "correction", text: "Couldn't be confirmed in the actual calls, so it's not counted." }) : null,
+      unverified ? notice("error", "Not confirmed",
+                          "This couldn't be confirmed in the actual calls, so it isn't counted.") : null,
       ...(claim.corrections || []).map((c) =>
-        el("p", { class: "correction", title: `field: ${c.field}`,
-                  text: `Corrected: this first said ${num(c.model)}. The real number, recounted from the calls, is ${num(c.server)}.` })),
+        notice("info", "Corrected",
+               `This first said ${num(c.model)}. The real number, recounted from the calls, is ${num(c.server)}.`)),
       state.dev && claim.model_n !== claim.verified_n
         ? el("p", { class: "devonly footnote", text: `model_n ${claim.model_n} · server_n ${claim.verified_n}` }) : null,
     ]);

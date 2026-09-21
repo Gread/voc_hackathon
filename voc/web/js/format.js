@@ -90,7 +90,7 @@ export function bar(fraction, tone = "") {
 // The server's own badge string ("broad pattern · 10,126 calls · 25 months · 11 products ·
 // 54 states") is built for an analyst auditing the evidence, not a first-time viewer reading a
 // pill at a glance. The tier name alone (from the same tier key CSS already colors by) reads in
-// one glance; the full detail survives as a tooltip for anyone who wants to check it.
+// one glance; the full detail sits behind the tooltip for anyone who wants to check it.
 export function badge(confidence) {
   if (!confidence) return el("span", { class: "badge", text: "no support" });
   const tier = confidence.tier || "";
