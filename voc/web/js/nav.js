@@ -27,7 +27,12 @@ function head(title, sub, asOf) {
 }
 
 export function show(id) {
-  for (const b of document.querySelectorAll(".rail-nav button")) b.classList.toggle("on", b.id === id);
+  for (const b of document.querySelectorAll(".rail-nav button")) {
+    const on = b.id === id;
+    b.classList.toggle("on", on);
+    // Which section is active is otherwise carried by colour alone.
+    if (on) b.setAttribute("aria-current", "page"); else b.removeAttribute("aria-current");
+  }
   const target = VIEWS[id];
   if (!target) {                       // weekly reveals itself; only the page chrome is ours
     head(WEEKLY.title, WEEKLY.sub, false);

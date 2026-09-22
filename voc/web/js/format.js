@@ -53,6 +53,15 @@ export function label(code) {
 
 export const shortDate = (iso) => (iso ? String(iso).slice(0, 10) : "");
 
+/** A hard character slice cuts mid-word; this backs up to the last space before the limit. */
+export function truncate(text, max = 160) {
+  const s = String(text ?? "");
+  if (s.length <= max) return s;
+  const cut = s.slice(0, max);
+  const lastSpace = cut.lastIndexOf(" ");
+  return `${lastSpace > max * 0.6 ? cut.slice(0, lastSpace) : cut}…`;
+}
+
 // Minimal, safe markdown: paragraphs, **bold**, *italic*, `code`, - lists, and [c1] claim markers.
 export function markdown(text) {
   const inline = (s) => esc(s)
@@ -78,13 +87,43 @@ export function bar(fraction, tone = "") {
   return el("div", { class: `bar ${tone}` }, [el("span", { style: `width:${width.toFixed(1)}%` })]);
 }
 
+// The server's own badge string ("broad pattern · 10,126 calls · 25 months · 11 products ·
+// 54 states") is built for an analyst auditing the evidence, not a first-time viewer reading a
+// pill at a glance. The tier name alone (from the same tier key CSS already colors by) reads in
+// one glance; the full detail sits behind the tooltip for anyone who wants to check it.
 export function badge(confidence) {
   if (!confidence) return el("span", { class: "badge", text: "no support" });
-  return el("span", { class: `badge ${esc(confidence.tier || "")}`, text: confidence.badge || confidence.tier || "" });
+  const tier = confidence.tier || "";
+  return el("span", { class: `badge ${esc(tier)}`, text: label(tier) || confidence.badge || "",
+                      title: confidence.badge || "" });
 }
 
 export function statusPill(status) {
   return el("span", { class: `pill ${esc(status || "stable")}`, text: status || "stable" });
+}
+
+/** A canvas chart has no text content at all - nothing for a screen reader, nothing to copy. This
+ *  appends a toggle and a real, initially-collapsed table with the chart's own numbers as its text
+ *  alternative. Removes any table+toggle it previously attached to the same wrap first, so a
+ *  re-render doesn't accumulate copies. */
+export function attachChartTable(wrap, columns, rows) {
+  wrap.querySelector(".chart-table-toggle")?.remove();
+  wrap.querySelector(".chart-table")?.remove();
+  const table = el("table", { class: "chart-table" }, [
+    el("thead", {}, [el("tr", {}, columns.map((c) => el("th", { text: c })))]),
+    el("tbody", {}, rows.map((r) => el("tr", {}, r.map((v, i) =>
+      el(i === 0 ? "th" : "td", i === 0 ? { text: String(v), scope: "row" } : { text: String(v) }))))),
+  ]);
+  table.hidden = true;
+  const btn = el("button", { type: "button", class: "ghost chart-table-toggle",
+                             text: "View as table", "aria-expanded": "false" });
+  btn.addEventListener("click", () => {
+    table.hidden = !table.hidden;
+    btn.textContent = table.hidden ? "View as table" : "Hide table";
+    btn.setAttribute("aria-expanded", String(!table.hidden));
+  });
+  wrap.appendChild(btn);
+  wrap.appendChild(table);
 }
 
 /** "1 product", "3 products" - the theme card headline is the demo's most-read line. */

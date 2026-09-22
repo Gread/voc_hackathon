@@ -10,21 +10,69 @@ import { initNav } from "./js/nav.js";
 import { clear, el, esc, label, num, pct } from "./js/format.js";
 import { clearFilters, onChange, queryParams, readURL, setAsOf, setFilter, state } from "./js/state.js";
 import { initThemeCard } from "./js/themecard.js";
+import { downloadReport } from "./js/report.js";
 
 let meta = null;
 
-function fillSelect(id, key, values, labels = label) {
-  const select = document.getElementById(id);
-  clear(select);
-  for (const value of values) {
-    const option = el("option", { value, text: labels(value) });
-    if ((state.filters[key] || []).includes(value)) option.selected = true;
-    select.appendChild(option);
-  }
-  select.size = Math.min(4, Math.max(2, values.length));
-  select.addEventListener("change", () => {
-    setFilter(key, [...select.selectedOptions].map((o) => o.value));
+/** The rail hides to width:0 (styles.css) rather than unmounting, so the toggle just flips one
+ *  class; graph.js's three.js canvas reads its own size on resize, so it needs a nudge once the
+ *  transition finishes and the content column has actually changed width. */
+function initRailToggle() {
+  const btn = document.getElementById("railToggle");
+  const KEY = "voc.railCollapsed";
+  const apply = (collapsed) => {
+    document.querySelector(".shell").classList.toggle("rail-collapsed", collapsed);
+    btn.setAttribute("aria-expanded", String(!collapsed));
+    btn.setAttribute("aria-label", collapsed ? "Show navigation" : "Hide navigation");
+    btn.title = collapsed ? "Show navigation" : "Hide navigation";
+  };
+  let collapsed = false;
+  try { collapsed = localStorage.getItem(KEY) === "1"; } catch { /* private window or blocked storage */ }
+  apply(collapsed);
+  btn.addEventListener("click", () => {
+    collapsed = !collapsed;
+    apply(collapsed);
+    try { localStorage.setItem(KEY, collapsed ? "1" : "0"); } catch { /* per-viewer convenience only */ }
+    window.setTimeout(() => window.dispatchEvent(new Event("resize")), 200);
   });
+}
+const filterGroups = {};   // dim -> {id, values}, cached so a click can re-render without refetching
+
+/** A filter as toggle chips instead of a ctrl-click multi-select - no modifier key to discover, and
+ *  what's selected is visible without opening anything. */
+function fillChipGroup(id, key, values, labels = label) {
+  filterGroups[key] = { id, values };
+  const wrap = document.getElementById(id);
+  clear(wrap);
+  for (const value of values) {
+    const on = (state.filters[key] || []).includes(value);
+    const chip = el("button", { type: "button", class: `chip${on ? " on" : ""}`,
+                                text: labels(value), "aria-pressed": String(on) });
+    chip.addEventListener("click", () => {
+      const current = state.filters[key] || [];
+      setFilter(key, on ? current.filter((v) => v !== value) : [...current, value]);
+    });
+    wrap.appendChild(chip);
+  }
+}
+
+/** The applied-state summary a filter widget needs to be trustworthy: what's selected, visible
+ *  without opening anything, and a way back to nothing. The corpus picker already shows its own
+ *  state, so it's left out here rather than repeated. */
+function renderFilterSummary() {
+  const node = document.getElementById("filterSummary");
+  if (!node) return;
+  const entries = Object.entries(state.filters).filter(([k]) => k !== "source");
+  if (!entries.length) {
+    node.textContent = "No filters applied — showing every contact in scope.";
+    node.classList.remove("applied");
+    return;
+  }
+  const DIM_LABEL = { product: "Product", segment: "Segment", region_group: "Region", date_from: "From", date_to: "To" };
+  node.textContent = entries
+    .map(([k, v]) => `${DIM_LABEL[k] || label(k)}: ${Array.isArray(v) ? `${v.length} selected` : v}`)
+    .join(" · ");
+  node.classList.add("applied");
 }
 
 /** Corpus picker. Two corpora differ in kind, so the choice stays visible and never defaults to a
@@ -73,14 +121,22 @@ function setupSources(sources) {
 
 async function loadFilterOptions() {
   // Options come from the data itself: the breakdown endpoint lists every value with support.
+  // The three dimensions are independent - run them together rather than waiting on each in turn.
   const dims = [["fProduct", "product"], ["fSegment", "segment"], ["fRegionGroup", "region_group"]];
-  for (const [id, dim] of dims) {
+  await Promise.all(dims.map(async ([id, dim]) => {
     try {
       const payload = await api.breakdown({}, { entity_type: "all", by: dim, min_n: 1 });
       const values = (payload.rows || []).map((r) => r.value).filter(Boolean);
-      if (values.length) fillSelect(id, dim, values);
-    } catch { /* leave the select empty if the dimension is unavailable */ }
-  }
+      if (values.length) fillChipGroup(id, dim, values);
+    } catch { /* leave the group empty if the dimension is unavailable */ }
+  }));
+}
+
+/** Re-render every chip group from its cached values, so a click reflects state.filters without a
+ *  refetch. Kept separate from loadFilterOptions, which only needs to run once. */
+function refreshFilterChips() {
+  for (const [key, { id, values }] of Object.entries(filterGroups)) fillChipGroup(id, key, values);
+  renderFilterSummary();
 }
 
 function setupAsOf(weeks) {
@@ -128,15 +184,51 @@ function modeBadge() {
     : "Recorded answers replay real tool runs; with an API key the agent answers live";
 }
 
+/** Two figures as aligned label/value pairs rather than a run-on sentence. As dot-separated prose
+ *  this wrapped to three ragged lines in a 244px rail and read as a caption nobody parses; the
+ *  quality metrics it used to carry are on the Overview hero and in About this data, in full. */
 function pipelineStrip() {
   const counts = meta.counts || {};
+  const strip = clear(document.getElementById("pipelineStrip"));
+  for (const [value, name] of [[num(counts.n_calls), "contacts"], [num(counts.n_themes), "themes"]]) {
+    strip.appendChild(el("span", { class: "rail-stat" }, [
+      el("strong", { text: value }),
+      el("span", { text: name }),
+    ]));
+  }
+}
+
+/** The first thing a first-time viewer - a judge, not an analyst - sees on Overview. The rail strip
+ *  above already carries the same numbers for anyone who's used the tool before; this says what they
+ *  mean, once, in plain sentences, so nobody needs the glossary to read the panels below it. */
+function renderHero() {
+  const counts = meta.counts || {};
   const qa = meta.qa || {};
-  const bits = [
-    `${num(counts.n_calls)} calls`, `${num(counts.n_topics)} topics`, `${num(counts.n_themes)} themes`,
+  const sources = meta.sources || [];
+  const strip = document.getElementById("heroStrip");
+  if (!counts.n_calls) { strip.hidden = true; return; }
+  strip.hidden = false;
+
+  const kinds = [...new Set(sources.map((s) => s.kind))];
+  const corpusPhrase = kinds.includes("real") && kinds.includes("synthetic")
+    ? "real written complaints and synthetic call transcripts"
+    : kinds.includes("synthetic") ? "synthetic call transcripts" : "real written complaints";
+  // No figures in this line any more - the two it used to carry are the first two stats, a stride
+  // below it. What it says that nothing else on the page says is what the corpus is made of, which
+  // is a disclosure rather than decoration, so the sentence stays and the digits go.
+  document.getElementById("heroLine").textContent =
+    `Contacts are ${corpusPhrase}, each read once and grouped into themes.`;
+
+  const stats = [
+    [num(counts.n_calls), "contacts read"],
+    [num(counts.n_themes), `themes, from ${num(counts.n_topics)} topics`],
+    [qa.quote_verify_rate != null ? pct(qa.quote_verify_rate) : "-", "quotes verify word-for-word"],
+    [qa.reason_agreement != null ? pct(qa.reason_agreement) : "-", "agree with the bank's own category, read blind"],
   ];
-  if (qa.reason_agreement) bits.push(`reason agreement ${Number(qa.reason_agreement).toFixed(2)}`);
-  if (qa.quote_verify_rate) bits.push(`quotes verified ${pct(qa.quote_verify_rate)}`);
-  document.getElementById("pipelineStrip").textContent = bits.join(" · ");
+  const wrap = clear(document.getElementById("heroStats"));
+  for (const [value, caption] of stats) {
+    wrap.appendChild(el("div", { class: "hero-stat" }, [el("strong", { text: value }), el("span", { text: caption })]));
+  }
 }
 
 function aboutModal() {
@@ -169,11 +261,14 @@ function aboutModal() {
   body.appendChild(el("p", { class: "footnote", text:
     "Dates are when the regulator received the complaint, which lags the underlying contact. " +
     "Redactions such as XXXX are the regulator's and are kept verbatim in every quote. " +
-    "No synthetic or planted records are used anywhere in this dataset." }));
+    "Written complaints are real; call transcripts are synthetic and labelled SYNTHETIC everywhere " +
+    "they appear. Nothing is fabricated to fit a narrative - the corpus picker on the left always " +
+    "says which kind a number covers." }));
 }
 
 async function boot() {
   readURL();
+  initRailToggle();
   initDrawer();
   initThemeCard();
   initDashboard();
@@ -181,18 +276,18 @@ async function boot() {
     clearFilters();
     for (const box of document.querySelectorAll("#sourceBoxes input")) box.checked = true;
     for (const box of document.querySelectorAll("#sourceBoxes .source-box")) box.classList.add("on");
-    for (const id of ["fProduct", "fSegment", "fRegionGroup"]) {
-      for (const o of document.getElementById(id).options) o.selected = false;
-    }
     document.getElementById("fFrom").value = "";
     document.getElementById("fTo").value = "";
+    refreshFilterChips();
   });
   for (const [id, key] of [["fFrom", "date_from"], ["fTo", "date_to"]]) {
     const input = document.getElementById(id);
     input.value = state.filters[key] || "";
-    input.addEventListener("change", () => setFilter(key, input.value));
+    input.addEventListener("change", () => { setFilter(key, input.value); renderFilterSummary(); });
   }
   document.getElementById("aboutBtn").addEventListener("click", aboutModal);
+  const reportBtn = document.getElementById("downloadReport");
+  reportBtn.addEventListener("click", () => downloadReport(reportBtn));
 
   try {
     meta = await api.meta();
@@ -203,6 +298,7 @@ async function boot() {
   }
   modeBadge();
   pipelineStrip();
+  renderHero();
   if (!state.asOf && meta.as_of_week) state.asOf = meta.as_of_week;
   setupAsOf(meta.as_of_weeks || []);
   setupSources(meta.sources || []);
@@ -211,8 +307,9 @@ async function boot() {
   initGraph();
   initNav({ navGraph: showGraph });      // the scene is built on first visit, not on boot
   await loadFilterOptions();
+  renderFilterSummary();
   renderAll();
-  onChange((reason) => { if (reason !== "asof") renderAll(); });
+  onChange((reason) => { if (reason === "filters") refreshFilterChips(); if (reason !== "asof") renderAll(); });
 }
 
 boot();

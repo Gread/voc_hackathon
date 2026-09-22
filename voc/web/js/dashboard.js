@@ -3,14 +3,26 @@
 import { api } from "./api.js";
 import { openCall, openCallList } from "./calldrawer.js";
 import { openTheme } from "./themecard.js";
-import { bar, clear, el, label, num, pct, pctOf, signed, statusPill } from "./format.js";
+import { attachChartTable, bar, clear, el, label, num, pct, pctOf, plural, shortDate, signed, statusPill, truncate } from "./format.js";
 import { queryParams, state } from "./state.js";
-import { trendChart } from "./charts.js";
+import { donutChart, seriesToTable, sparkline, trendChart } from "./charts.js";
 
 let driverPolarity = "negative";
+let reasonsView = "ranked";
+let driversView = "ranked";
 let lastTrendIds = [];
 
 function panel(id) { return document.getElementById(id); }
+
+/** Toggling a class is invisible to a screen reader; aria-pressed says which tab is active in
+ *  words, not just colour. */
+function setActiveTab(groupSelector, active) {
+  for (const t of document.querySelectorAll(groupSelector)) {
+    const on = t === active;
+    t.classList.toggle("active", on);
+    t.setAttribute("aria-pressed", String(on));
+  }
+}
 
 function failed(node, err) {
   clear(node).appendChild(el("p", { class: "muted", text: `could not load: ${err.message}` }));
@@ -18,6 +30,18 @@ function failed(node, err) {
 
 function callsLink(resultId, text, title) {
   return el("button", { class: "linkish", text, onclick: () => openCallList(resultId, title) });
+}
+
+/** "mean -1.2" is the -2..+2 sentiment scale showing through. Nobody outside the team reads that
+ *  as "these customers are angry", so say it in words and keep the number in the tooltip. */
+function sentimentWord(mean) {
+  const v = Number(mean);
+  if (!Number.isFinite(v)) return null;
+  if (v <= -1.5) return "very negative";
+  if (v <= -0.5) return "negative";
+  if (v < 0.5) return "mixed";
+  if (v < 1.5) return "positive";
+  return "very positive";
 }
 
 export async function renderReasons() {
@@ -28,6 +52,35 @@ export async function renderReasons() {
     const max = Math.max(1, ...rows.map((r) => r.n_calls || 0));
     const out = clear(node);
     if (!rows.length) { out.appendChild(el("p", { class: "muted", text: "no reasons above minimum support in this scope" })); return; }
+    // Only claim a comparison when one exists. The API always hands back a previous window of the
+    // same length, but here that lands on 2020-11..2023-08, where this corpus has no calls at all -
+    // announcing it implied these shares were measured against something real. They weren't.
+    const prevWindow = payload.data?.previous_period;
+    const comparable = rows.some((r) => Number(r.n_previous) > 0);
+    if (prevWindow && comparable) {
+      out.appendChild(el("p", { class: "footnote", text:
+        `Change is against ${shortDate(prevWindow[0])} to ${shortDate(prevWindow[1])} - the same length of time, immediately before.` }));
+    } else {
+      out.appendChild(el("p", { class: "footnote", text:
+        "Share of all contacts in view. There is no earlier period in this data to compare against." }));
+    }
+
+    // Share view: the mix as a whole. Ranking stays with the bars, so this is a second view of
+    // the same rows rather than a replacement.
+    if (reasonsView === "share") {
+      const canvas = el("canvas", { id: "reasonsDonut" });
+      out.appendChild(el("div", { class: "donut-box" }, [canvas]));
+      const donutRows = rows.map((r) => ({ label: label(r.label || r.reason), value: Number(r.n_calls) || 0 }));
+      setTimeout(() => donutChart("reasonsDonut", donutRows), 0);
+      if (payload.result_id) {
+        out.appendChild(el("p", { class: "footnote" }, [
+          callsLink(payload.result_id, `${num(payload.n_call_ids ?? 0)} calls carry a contact reason`,
+                    "Calls with a contact reason"),
+        ]));
+      }
+      return;
+    }
+
     for (const row of rows) {
       // A delta needs a comparable previous period; without one only the trend direction is meaningful.
       const comparable = Number(row.n_previous) > 0;
@@ -44,7 +97,13 @@ export async function renderReasons() {
           ]),
         ]),
         bar((row.n_calls || 0) / max),
-        specifics ? el("p", { class: "quote", text: specifics.slice(0, 160) }) : null,
+        // The examples are worth having, but three of them per row turned this panel into prose.
+        specifics
+          ? el("details", { class: "row-detail" }, [
+              el("summary", { text: "What they asked for" }),
+              el("p", { class: "quote", text: truncate(specifics, 220) }),
+            ])
+          : null,
       ]));
     }
     if (payload.result_id) {
@@ -71,6 +130,30 @@ export async function renderDrivers() {
     const rows = payload.rows || [];
     const moments = (payload.data || {}).positive_moments_by_category || [];
     const out = clear(node);
+
+    // Share view. Which dataset is on screen differs by tab: themes carry the negative side, and
+    // positive-moment categories carry the positive one, because positive topics rarely clear
+    // minimum support on a complaint corpus. The donut follows whichever is actually shown.
+    if (driversView === "share") {
+      const source = driverPolarity === "positive" && moments.length
+        ? moments.map((m) => ({ label: label(m.category), value: Number(m.n_calls) || 0 }))
+        : rows.map((r) => ({ label: r.name || label(r.key), value: Number(r.n_calls) || 0 }));
+      if (!source.length) {
+        out.appendChild(el("p", { class: "muted", text: "nothing above minimum support in this scope" }));
+        return;
+      }
+      const canvas = el("canvas", { id: "driversDonut" });
+      out.appendChild(el("div", { class: "donut-box" }, [canvas]));
+      setTimeout(() => donutChart("driversDonut", source,
+        { ramp: driverPolarity === "positive" ? "pos" : "neg" }), 0);
+      if (payload.result_id) {
+        out.appendChild(el("p", { class: "footnote" }, [
+          callsLink(payload.result_id, "which calls?", "Calls behind these drivers"),
+        ]));
+      }
+      return;
+    }
+
     if (driverPolarity === "positive") {
       out.appendChild(el("p", { class: "footnote", text: payload.data?.corpus_note
         ? `What went right, ${payload.data.corpus_note}.`
@@ -81,12 +164,17 @@ export async function renderDrivers() {
         out.appendChild(el("div", { class: "row" }, [
           el("div", { class: "row-head" }, [
             el("span", { class: "row-name", text: label(m.category) }),
-            el("span", { class: "row-meta", text: `${num(m.n_calls)} calls · ${pctOf(m.share_pct)}` }),
+            el("span", { class: "row-meta", text: `${plural(m.n_calls, "call")} · ${pctOf(m.share_pct)}` }),
           ]),
           bar((m.n_calls || 0) / Math.max(1, ...moments.map((x) => x.n_calls || 0)), "pos"),
-          quote ? el("p", { class: "quote" }, [
-            el("button", { class: "linkish", text: `"${quote.quote.slice(0, 150)}"`,
-                           onclick: () => openCall(quote.call_id, quote.quote) })]) : null,
+          quote
+            ? el("details", { class: "row-detail" }, [
+                el("summary", { text: "What they said" }),
+                el("p", { class: "quote" }, [
+                  el("button", { class: "linkish", text: `"${quote.quote.slice(0, 150)}"`,
+                                 onclick: () => openCall(quote.call_id, quote.quote) })]),
+              ])
+            : null,
         ]));
       }
     }
@@ -101,18 +189,28 @@ export async function renderDrivers() {
       const name = el(themeId ? "button" : "span", themeId
         ? { class: "linkish", text: row.name || themeId, onclick: () => openTheme(themeId) }
         : { class: "row-name", text: label(row.name || row.key) });
+      const mood = sentimentWord(row.mean_sentiment);
       out.appendChild(el("div", { class: "row" }, [
         el("div", { class: "row-head" }, [name,
-          el("span", { class: "row-meta", text: `${num(row.n_calls)} calls · mean ${Number(row.mean_sentiment ?? 0).toFixed(1)}` })]),
+          el("span", { class: "row-meta",
+                       title: `mean sentiment ${Number(row.mean_sentiment ?? 0).toFixed(2)} on a -2 to +2 scale`,
+                       text: `${plural(row.n_calls, "call")}${mood ? ` · ${mood}` : ""}` })]),
         bar((row.n_calls || 0) / max, driverPolarity === "positive" ? "pos" : "neg"),
         el("div", {}, (row.top_driver_categories || []).slice(0, 2).map((c) =>
           el("span", { class: "chip",
-                       text: `${label(typeof c === "string" ? c : c.driver_category || c.key)}${c.n_calls ? ` ${c.n_calls}` : ""}` }))),
-        (row.top_specific_drivers || []).length
-          ? el("p", { class: "quote", text: row.top_specific_drivers[0].text }) : null,
-        quote ? el("p", { class: "quote" }, [
-          el("button", { class: "linkish", text: `"${quote.quote.slice(0, 150)}"`,
-                         onclick: () => openCall(quote.call_id, quote.quote) })]) : null,
+                       text: `${label(typeof c === "string" ? c : c.driver_category || c.key)}${c.n_calls ? ` · ${num(c.n_calls)}` : ""}` }))),
+        // The driver and the verbatim quote are the evidence, not the headline: kept, one click in,
+        // so the panel scans as ranked bars rather than three paragraphs per row.
+        (row.top_specific_drivers || []).length || quote
+          ? el("details", { class: "row-detail" }, [
+              el("summary", { text: "What they said" }),
+              (row.top_specific_drivers || []).length
+                ? el("p", { class: "quote", text: row.top_specific_drivers[0].text }) : null,
+              quote ? el("p", { class: "quote" }, [
+                el("button", { class: "linkish", text: `"${quote.quote.slice(0, 150)}"`,
+                               onclick: () => openCall(quote.call_id, quote.quote) })]) : null,
+            ])
+          : null,
       ]));
     }
     if (payload.result_id) {
@@ -131,18 +229,53 @@ export async function renderEmerging() {
     if (!rows.length) {
       out.appendChild(el("p", { class: "muted", text: `no theme passed the threshold at ${payload.as_of_week || "this week"}` }));
     }
+    // One weekly-trend call covers the whole panel; the endpoint takes six entity ids at a time.
+    // A failure here costs the sparklines and nothing else, so the panel still renders without it.
+    const ids = rows.map((r) => r.theme_id).filter(Boolean).slice(0, 6);
+    let seriesById = {};
+    if (ids.length) {
+      try {
+        const trend = await api.trend(ids, "week", queryParams());
+        seriesById = Object.fromEntries((trend.rows || []).map((r) => [r.entity_id, r.series || []]));
+      } catch { /* sparklines are an enhancement, never a dependency */ }
+    }
+    let drewSpark = false;
     for (const row of rows) {
-      out.appendChild(el("div", { class: "row" }, [
-        el("div", { class: "row-head" }, [
-          el("button", { class: "linkish", text: row.name || row.theme_id, onclick: () => openTheme(row.theme_id) }),
-          statusPill(row.status),
+      const recent = Number(row.n_recent) || 0;
+      const expected = Number(row.expected_recent ?? 0);
+      const ratio = expected > 0 ? recent / expected : null;
+      // The statistic (z, weeks, first-seen) is what built the detector; the pace is what a reader
+      // needs first. Plain sentence leads, the numbers that back it sit underneath in .row-meta.
+      const plain = ratio && ratio >= 1.15
+        ? `${plural(recent, "call")} in the last 4 weeks — about ${ratio.toFixed(1)}× the usual pace`
+        : `${plural(recent, "call")} in the last 4 weeks`;
+      const series = seriesById[row.theme_id] || [];
+      if (series.length) drewSpark = true;
+      // Text left, trajectory right, instead of the line sitting under the text at whatever height
+      // the panel's width implied. Five themes now cost about as much page as two used to.
+      out.appendChild(el("div", { class: "row emerging-row" }, [
+        el("div", { class: "emerging-text" }, [
+          el("div", { class: "row-head" }, [
+            el("button", { class: "linkish", text: row.name || row.theme_id, onclick: () => openTheme(row.theme_id) }),
+            statusPill(row.status),
+          ]),
+          el("p", { style: "margin:2px 0 0", text: plain }),
+          el("div", { class: "row-meta",
+            title: `expected ${expected.toFixed(1)} · z ${Number(row.z ?? 0).toFixed(1)} · ${plural(row.weeks_recent, "week")} with activity`,
+            text: `First seen ${row.first_seen_week || "?"}`
+            + (row.robust_8w ? " · confirmed over 8 weeks, not just 4" : "")
+            + (row.novel_vocabulary ? " · wording not seen before" : "") }),
         ]),
-        el("div", { class: "row-meta", text:
-          `${num(row.n_recent)} recent vs ${Number(row.expected_recent ?? 0).toFixed(1)} expected · z ${Number(row.z ?? 0).toFixed(1)}` +
-          ` · ${num(row.weeks_recent)} weeks · first seen ${row.first_seen_week || "?"}` +
-          (row.robust_8w ? " · robust at 8 weeks" : "") + (row.novel_vocabulary ? " · new vocabulary" : "") }),
-        bar(Math.min(1, (Number(row.n_recent) || 0) / Math.max(5, ...rows.map((r) => r.n_recent || 0))), "neg"),
+        series.length
+          ? el("div", { class: "spark-wrap" }, [sparkline(series)])
+          : bar(Math.min(1, recent / Math.max(5, ...rows.map((r) => r.n_recent || 0))), "neg"),
       ]));
+    }
+    // The legend belongs to the panel, not to each theme: it was the same sentence repeated under
+    // every row, which is the wall of text this panel was rebuilt to get rid of.
+    if (drewSpark) {
+      out.insertBefore(el("p", { class: "footnote spark-legend",
+        text: "Lines show weekly calls over the last 6 months · red marks the last 4 weeks" }), out.firstChild);
     }
     if (data.expected_false_positives !== undefined && data.expected_false_positives !== null) {
       const fp = Number(data.expected_false_positives);
@@ -151,6 +284,8 @@ export async function renderEmerging() {
     }
   } catch (err) { failed(node, err); }
 }
+
+let trendGrain = "month";
 
 export async function renderTrend(entityIds = null) {
   const subtitle = document.getElementById("trendSubtitle");
@@ -162,23 +297,52 @@ export async function renderTrend(entityIds = null) {
     }
     lastTrendIds = ids;
     if (!ids.length) { subtitle.textContent = "no themes in this scope"; return; }
-    const payload = await api.trend(ids, "month", queryParams());
+    const payload = await api.trend(ids, trendGrain, queryParams());
     const series = (payload.rows || []).map((r) => ({
       label: r.name || r.entity_id,
       points: (r.series || r.points || []).map((p) => ({ period: p.period, share: p.share, n_calls: p.n_calls })),
     })).filter((s) => s.points.length);
-    subtitle.textContent = `monthly share · ${series.length} themes`;
+    subtitle.textContent = `${trendGrain}ly share · ${series.length} themes`;
     trendChart("trendChart", series, { valueKey: "share" });
+    const { columns, rows } = seriesToTable(series, "share");
+    // The table/toggle append after the chart, but must sit outside .chart-box: Chart.js
+    // (responsive: true, maintainAspectRatio: false) sizes the canvas from that box's own
+    // height, and adding sibling content inside it breaks that measurement.
+    attachChartTable(document.getElementById("trendChart").closest(".panel-body"), columns, rows);
   } catch (err) { subtitle.textContent = `trend unavailable: ${err.message}`; }
 }
 
 export function initDashboard() {
   for (const tab of document.querySelectorAll("#panelDrivers .tab")) {
+    tab.setAttribute("aria-pressed", String(tab.classList.contains("active")));
     tab.addEventListener("click", () => {
-      for (const t of document.querySelectorAll("#panelDrivers .tab")) t.classList.remove("active");
-      tab.classList.add("active");
+      setActiveTab("#panelDrivers .tab", tab);
       driverPolarity = tab.dataset.polarity;
       renderDrivers();
+    });
+  }
+  for (const tab of document.querySelectorAll("#reasonsView .tab")) {
+    tab.setAttribute("aria-pressed", String(tab.classList.contains("active")));
+    tab.addEventListener("click", () => {
+      setActiveTab("#reasonsView .tab", tab);
+      reasonsView = tab.dataset.view;
+      renderReasons();
+    });
+  }
+  for (const tab of document.querySelectorAll("#driversView .tab")) {
+    tab.setAttribute("aria-pressed", String(tab.classList.contains("active")));
+    tab.addEventListener("click", () => {
+      setActiveTab("#driversView .tab", tab);
+      driversView = tab.dataset.view;
+      renderDrivers();
+    });
+  }
+  for (const tab of document.querySelectorAll("#trendGrain .tab")) {
+    tab.setAttribute("aria-pressed", String(tab.classList.contains("active")));
+    tab.addEventListener("click", () => {
+      setActiveTab("#trendGrain .tab", tab);
+      trendGrain = tab.dataset.grain;
+      renderTrend(lastTrendIds.length ? lastTrendIds : null);
     });
   }
 }

@@ -2,7 +2,7 @@
 // queries the dashboard runs. Every count is a link to the calls behind it.
 import { api } from "./api.js";
 import { openCall, openCallList } from "./calldrawer.js";
-import { clear, el, label, num, pctOf } from "./format.js";
+import { bar, clear, el, label, num, pctOf, plural } from "./format.js";
 import { openTheme } from "./themecard.js";
 
 const QUESTIONS = [
@@ -18,6 +18,17 @@ const QUESTIONS = [
 
 let weeks = [];
 let current = null;
+
+/** The -2..+2 sentiment scale in words - see the same helper in dashboard.js. */
+function sentimentWord(mean) {
+  const v = Number(mean);
+  if (!Number.isFinite(v)) return null;
+  if (v <= -1.5) return "very negative";
+  if (v <= -0.5) return "negative";
+  if (v < 0.5) return "mixed";
+  if (v < 1.5) return "positive";
+  return "very positive";
+}
 
 const arrow = (d) => (d === "up" ? "▲" : d === "down" ? "▼" : d === "flat" ? "→" : "");
 const moveClass = (d) => (d === "up" ? "up" : d === "down" ? "down" : "flat");
@@ -38,21 +49,46 @@ function quoteLine(q) {
   ]);
 }
 
-/** Section 1: volume and mix. */
+/** One labelled bar in a small comparison chart. `lead` paints it in the brand colour so the
+ *  value being compared stands out from what it's being compared against. */
+function compareBar(labelText, value, max, { lead = false, suffix = "" } = {}) {
+  const pctWidth = Math.max(1, Math.min(100, (Number(value) / Math.max(1, max)) * 100));
+  const fill = el("span", { style: `width:${pctWidth.toFixed(1)}%` });
+  return el("div", { class: `vol-row${lead ? " lead" : ""}` }, [
+    el("span", { class: "vol-label", text: labelText }),
+    el("div", { class: "vol-track" }, [fill]),
+    el("span", { class: "vol-val", text: `${value}${suffix}` }),
+  ]);
+}
+
+/** Section 1: volume and mix.
+ *
+ *  Chart-led rather than a wall of figures. Three volume numbers that only mean something next to
+ *  each other are drawn next to each other; the reason rows carry the same share bars the Overview
+ *  panel uses, so relative size reads without arithmetic. Every figure stays on screen as a label,
+ *  and the supporting quote sits behind a disclosure rather than pushing the chart off the page. */
 function sectionChanged(d) {
   const out = el("div", {});
-  out.appendChild(el("div", { class: "weekly-stats" }, [
-    stat(num(d.n_calls), "contacts this week"),
-    stat(num(d.n_calls_previous_week), "the week before"),
-    stat(String(d.four_week_average), "four-week average"),
-    stat(String(d.n_new_this_week), "themes new this week"),
-  ]));
-  const versus = el("p", { class: "footnote" }, [
-    document.createTextNode("Against the four-week average: "), movement(d.vs_four_week_average, ""),
-  ]);
-  out.appendChild(versus);
+  const vols = [Number(d.n_calls) || 0, Number(d.n_calls_previous_week) || 0, Number(d.four_week_average) || 0];
+  const max = Math.max(...vols, 1);
 
-  for (const r of d.reasons || []) {
+  out.appendChild(el("div", { class: "weekly-headline" }, [
+    el("strong", { text: num(d.n_calls) }),
+    el("span", { text: " contacts this week" }),
+    movement(d.vs_four_week_average, ""),
+    el("span", { class: "muted", text: " vs the four-week average" }),
+  ]));
+
+  out.appendChild(el("div", { class: "vol-compare" }, [
+    compareBar("This week", vols[0], max, { lead: true }),
+    compareBar("Week before", vols[1], max),
+    compareBar("Four-week average", d.four_week_average, max),
+  ]));
+
+  const reasons = d.reasons || [];
+  const rMax = Math.max(1, ...reasons.map((r) => Number(r.n_calls) || 0));
+  if (reasons.length) out.appendChild(el("h3", { class: "weekly-sub", text: "Why they got in touch" }));
+  for (const r of reasons) {
     out.appendChild(el("div", { class: "row" }, [
       el("div", { class: "row-head" }, [
         el("span", { class: "row-name", text: r.label }),
@@ -61,19 +97,25 @@ function sectionChanged(d) {
           movement(r.vs_previous_week),
         ]),
       ]),
-      r.top_specific?.length ? el("p", { class: "quote", text: r.top_specific[0] }) : null,
+      bar((Number(r.n_calls) || 0) / rMax),
+      r.top_specific?.length
+        ? el("details", { class: "row-detail" }, [
+            el("summary", { text: "What they said" }),
+            el("p", { class: "quote", text: r.top_specific[0] }),
+          ])
+        : null,
     ]));
   }
+
   if (d.new_this_week?.length) {
-    out.appendChild(el("h3", { class: "weekly-sub", text: "New to this week" }));
+    out.appendChild(el("h3", { class: "weekly-sub",
+                               text: `New to this week (${num(d.n_new_this_week)})` }));
+    const chips = el("div", { class: "chips" });
     for (const t of d.new_this_week) {
-      out.appendChild(el("div", { class: "row" }, [
-        el("div", { class: "row-head" }, [
-          el("button", { class: "linkish row-name", text: t.name, onclick: () => openTheme(t.theme_id) }),
-          el("span", { class: "row-meta", text: `${num(t.n_calls)} calls` }),
-        ]),
-      ]));
+      chips.appendChild(el("button", { type: "button", class: "chip",
+        text: `${t.name} · ${plural(t.n_calls, "call")}`, onclick: () => openTheme(t.theme_id) }));
     }
+    out.appendChild(chips);
   }
   return out;
 }
@@ -89,7 +131,7 @@ function sectionFeeling(d) {
         out.appendChild(el("div", { class: "row" }, [
           el("div", { class: "row-head" }, [
             el("span", { class: "row-name", text: label(m.category) }),
-            el("span", { class: "row-meta", text: `${num(m.n_calls)} calls` }),
+            el("span", { class: "row-meta", text: plural(m.n_calls, "call") }),
           ]),
           (m.quotes || [])[0] ? quoteLine(m.quotes[0]) : null,
         ]));
@@ -100,16 +142,27 @@ function sectionFeeling(d) {
       out.appendChild(el("p", { class: "muted", text: "nothing above minimum support this week" }));
       continue;
     }
+    // Same treatment as section 1: a bar carries the relative size, and the customer's own words
+    // stay one click away rather than tripling the height of every row.
+    const rowMax = Math.max(1, ...rows.map((r) => Number(r.n_calls) || 0));
     for (const r of rows) {
       out.appendChild(el("div", { class: "row" }, [
         el("div", { class: "row-head" }, [
           r.theme_id
             ? el("button", { class: "linkish row-name", text: r.name, onclick: () => openTheme(r.theme_id) })
             : el("span", { class: "row-name", text: r.name }),
-          el("span", { class: "row-meta", text: `${num(r.n_calls)} calls · mean ${r.mean_sentiment}` }),
+          el("span", { class: "row-meta",
+                       title: `mean sentiment ${r.mean_sentiment} on a -2 to +2 scale`,
+                       text: `${plural(r.n_calls, "call")}${sentimentWord(r.mean_sentiment) ? ` · ${sentimentWord(r.mean_sentiment)}` : ""}` }),
         ]),
+        bar((Number(r.n_calls) || 0) / rowMax, key === "positive" ? "pos" : "neg"),
         r.triggers?.length ? el("p", { class: "trigger", text: r.triggers[0] }) : null,
-        (r.quotes || [])[0] ? quoteLine(r.quotes[0]) : null,
+        (r.quotes || [])[0]
+          ? el("details", { class: "row-detail" }, [
+              el("summary", { text: "In the customer's words" }),
+              quoteLine(r.quotes[0]),
+            ])
+          : null,
       ]));
     }
   }
@@ -130,10 +183,11 @@ function sectionAttention(d) {
         el("button", { class: "linkish row-name", text: r.name, onclick: () => openTheme(r.theme_id) }),
         el("span", { class: "pill " + (r.status || ""), text: (r.status || "").toUpperCase() }),
       ]),
-      el("p", { class: "footnote",
-        text: `${num(r.n_recent)} in the last four weeks against ${Number(r.expected_recent).toFixed(1)} expected`
-              + ` · z ${Number(r.z).toFixed(1)}`
-              + (r.robust_8w ? " · robust at 8 weeks" : "")
+      el("p", { class: "footnote", title: `expected ${Number(r.expected_recent).toFixed(1)} · z ${Number(r.z).toFixed(1)}`,
+        text: `${plural(Number(r.n_recent) || 0, "call")} in the last four weeks`
+              + (Number(r.expected_recent) > 0 && Number(r.n_recent) / Number(r.expected_recent) >= 1.15
+                 ? ` — about ${(Number(r.n_recent) / Number(r.expected_recent)).toFixed(1)}× the usual pace` : "")
+              + (r.robust_8w ? " · confirmed over 8 weeks, not just 4" : "")
               + (r.first_seen_week ? ` · first seen ${r.first_seen_week}` : "") }),
       r.root_cause ? el("p", { class: "trigger", text: r.root_cause }) : null,
       asks ? el("p", { class: "footnote", text: `What they asked for: ${asks}` }) : null,
@@ -155,7 +209,7 @@ function sectionSupporting(d) {
       el("div", { class: "row-head" }, [
         el("button", { class: "linkish row-name", text: g.name, onclick: () => openTheme(g.theme_id) }),
         el("span", { class: "row-meta",
-          text: `${num(g.n_distinct_calls)} distinct calls${g.window && g.window.includes("..") ? ` · ${g.window}` : ""}` }),
+          text: `${plural(g.n_distinct_calls, "distinct call")}${g.window && g.window.includes("..") ? ` · ${g.window}` : ""}` }),
       ]),
       ...(g.quotes || []).map(quoteLine),
     ]));

@@ -202,10 +202,13 @@ function playback(nodes, meshes, tubes, T, payload) {
     label.classList.toggle("hot", !whole && hot.size > 0);
   };
 
-  const stop = () => { window.clearInterval(timer); timer = null; playBtn.textContent = "▶"; };
+  const stop = () => {
+    window.clearInterval(timer); timer = null;
+    playBtn.textContent = "▶"; playBtn.setAttribute("aria-label", "Play the weeks"); playBtn.setAttribute("aria-pressed", "false");
+  };
   playBtn.onclick = () => {
     if (timer) return stop();
-    playBtn.textContent = "❚❚";
+    playBtn.textContent = "❚❚"; playBtn.setAttribute("aria-label", "Pause"); playBtn.setAttribute("aria-pressed", "true");
     timer = window.setInterval(() => {
       const next = (Number(range.value) + 1) % weeks.length;
       range.value = String(next);
@@ -332,8 +335,10 @@ function paint() {
     tube.material.opacity = on ? 0.95 : 0.28;
   }
   for (const chip of document.querySelectorAll("#graphChips .chip")) {
-    chip.classList.toggle("on", chip.dataset.theme === selected);
-    chip.style.borderColor = chip.dataset.theme === selected ? "#005aa0" : "";
+    const on = chip.dataset.theme === selected;
+    chip.classList.toggle("on", on);
+    chip.style.borderColor = on ? "#005aa0" : "";
+    chip.setAttribute("aria-pressed", String(on));
   }
 }
 

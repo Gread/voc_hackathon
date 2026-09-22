@@ -1,12 +1,13 @@
 // Call drawer: the full customer text with evidence spans highlighted by their stored offsets.
 
 import { api } from "./api.js";
+import { closeOverlay, openOverlay } from "./dialog.js";
 import { clear, el, esc, label, num, shortDate } from "./format.js";
 
 const drawer = () => document.getElementById("drawer");
 const body = () => document.getElementById("drawerBody");
 
-export function closeDrawer() { drawer().hidden = true; }
+export function closeDrawer() { closeOverlay(drawer()); }
 
 function highlight(text, spans) {
   // Non-overlapping, ordered spans -> a mix of text nodes and <mark> elements.
@@ -61,7 +62,7 @@ function topicBlock(topic) {
 
 export async function openCall(callId, focusQuote = null) {
   const node = drawer();
-  node.hidden = false;
+  openOverlay(node, body());
   clear(body()).appendChild(el("p", { class: "muted", text: `loading ${callId}…` }));
   let payload;
   try {
@@ -150,7 +151,7 @@ export function initDrawer() {
 /** A list of calls behind a number, opened from any "n calls" link. */
 export async function openCallList(resultId, title = "Calls behind this number", qhash = null) {
   const node = drawer();
-  node.hidden = false;
+  openOverlay(node, body());
   clear(body()).appendChild(el("p", { class: "muted", text: "loading calls…" }));
   let payload;
   try {
