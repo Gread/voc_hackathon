@@ -43,6 +43,23 @@ function notice(kind, title, body) {
   });
 }
 
+/** Say which number was put right, because the two corrections mean different things.
+ *
+ *  `n_calls` is how many calls the answer claims to rest on - the server recounts the calls the
+ *  claim actually cites and usually finds more, not a wrong statistic. Everything else is a figure
+ *  the model wrote that no tool returned, replaced with the nearest one that a tool did return.
+ *  Calling both "the real number" said the cited percentage had been wrong, which it had not. */
+function correctionNotice(c) {
+  if (c.field === "n_calls") {
+    return notice("info", "Recounted",
+                  `The answer said this rests on ${num(c.model)} calls. Counted from the calls it `
+                  + `cites, it rests on ${num(c.server)}.`);
+  }
+  return notice("info", "Corrected",
+                `This first said ${num(c.model)} for ${c.field}. The closest number the calls `
+                + `support is ${num(c.server)}.`);
+}
+
 /** Decide what can honestly be drawn BEFORE reserving space for it.
  *
  *  This used to append the box first and fill it inside a setTimeout, which meant that whenever the
@@ -120,9 +137,7 @@ function renderAnswer(answer, results, trace, toolCalls) {
       ]),
       unverified ? notice("error", "Not confirmed",
                           "This couldn't be confirmed in the actual calls, so it isn't counted.") : null,
-      ...(claim.corrections || []).map((c) =>
-        notice("info", "Corrected",
-               `This first said ${num(c.model)}. The real number, recounted from the calls, is ${num(c.server)}.`)),
+      ...(claim.corrections || []).map((c) => correctionNotice(c)),
       state.dev && claim.model_n !== claim.verified_n
         ? el("p", { class: "devonly footnote", text: `model_n ${claim.model_n} · server_n ${claim.verified_n}` }) : null,
     ]);
